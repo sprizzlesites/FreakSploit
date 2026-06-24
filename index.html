@@ -4229,6 +4229,175 @@ Impl["file-hasher"] = (root) => {
     UIKit.panel("Digests", UIKit.copyBtn(() => o.node.textContent), o.node));
 };
 
+/* ===================== DIFF TOOL ===================== */
+function diffLines(a, b) {
+  const A = a.split("\n"), B = b.split("\n"), n = A.length, m = B.length;
+  if (n * m > 4000000) return null; // too large for LCS DP
+  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (A[i] === B[j]) { out.push([" ", A[i]]); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push(["-", A[i]]); i++; } else { out.push(["+", B[j]]); j++; } }
+  while (i < n) out.push(["-", A[i++]]);
+  while (j < m) out.push(["+", B[j++]]);
+  return out;
+}
+Impl["diff-tool"] = (root) => {
+  const a = UIKit.area("A (original)", { placeholder: "paste text / response A" });
+  const b = UIKit.area("B (changed)", { placeholder: "paste text / response B" });
+  const o = UIKit.out();
+  const run = () => {
+    o.clear();
+    const d = diffLines(a.input.value, b.input.value);
+    if (!d) return o.line("inputs too large for line diff", "err");
+    let add = 0, del = 0;
+    d.forEach(([s, t]) => { if (s === "+") add++; else if (s === "-") del++; o.line(s + " " + t, s === "+" ? "ok" : s === "-" ? "err" : "dim"); });
+    if (!add && !del) o.set("✓ identical");
+    else { const top = el("div", { class: "hint" }, "+" + add + " added · -" + del + " removed"); o.node.parentElement.insertBefore(top, o.node); }
+  };
+  root.append(
+    UIKit.panel("Inputs", null, a.wrap, b.wrap, el("div", { class: "row" }, UIKit.btn("Compare", run, "primary"), UIKit.btn("Swap", () => { const t = a.input.value; a.input.value = b.input.value; b.input.value = t; }, "ghost"))),
+    UIKit.panel("Diff", UIKit.copyBtn(() => o.node.textContent), o.node));
+};
+
+/* ===================== URL ANALYZER ===================== */
+function tryB64(s) {
+  if (!/^[A-Za-z0-9+/_=-]{8,}$/.test(s)) return null;
+  try { const dec = decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))); if (/^[\x09\x0a\x0d\x20-\x7e]+$/.test(dec) && /[a-z0-9]/i.test(dec)) return dec; } catch {}
+  return null;
+}
+Impl["url-analyzer"] = (root) => {
+  const inp = UIKit.field("URL", { placeholder: "https://host/path?token=...&id=5#frag", mono: true });
+  const o = UIKit.out();
+  const run = () => {
+    o.clear();
+    let u; try { u = new URL(inp.input.value.trim()); } catch { return o.line("not a valid absolute URL", "err"); }
+    o.line("COMPONENTS", "k");
+    o.line("scheme   : " + u.protocol.replace(":", ""), "v");
+    o.line("host     : " + u.hostname, "v");
+    if (u.port) o.line("port     : " + u.port, "v");
+    o.line("path     : " + (u.pathname || "/"), "v");
+    if (u.username) o.line("userinfo : " + u.username + (u.password ? ":" + u.password : ""), "warn");
+    if (u.hash) o.line("fragment : " + decodeURIComponent(u.hash.slice(1)), "v");
+    o.line("origin   : " + u.origin, "dim");
+    const params = [...u.searchParams.entries()];
+    o.line(""); o.line("QUERY PARAMS (" + params.length + ")", "k");
+    if (!params.length) o.line("none", "dim");
+    for (const [k, v] of params) {
+      o.line(k + " = " + v, "v");
+      if (/^eyJ[\w-]+\.eyJ[\w-]+\./.test(v)) {
+        try { const p = v.split("."); o.line("   ↳ JWT header : " + Bytes.toUtf8(Bytes.fromB64url(p[0])), "s"); o.line("   ↳ JWT payload: " + Bytes.toUtf8(Bytes.fromB64url(p[1])), "s"); } catch {}
+      } else { const dec = tryB64(v); if (dec && dec !== v) o.line("   ↳ base64 → " + dec.slice(0, 120), "s"); }
+    }
+    History.add("URL Analyzer", u.hostname);
+  };
+  root.append(
+    UIKit.panel("URL", null, inp.wrap, el("div", { class: "row" }, UIKit.btn("Analyze", run, "primary"))),
+    UIKit.panel("Breakdown", UIKit.copyBtn(() => o.node.textContent), o.node));
+  inp.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== USER-AGENT PARSER ===================== */
+function parseUA(ua) {
+  const out = {};
+  out.bot = /bot|crawl|spider|slurp|bing|googlebot|duckduck|baidu|yandex|curl|wget|python-requests|axios|headless|phantom|scrapy|facebookexternalhit/i.test(ua) ? "⚠ likely bot/automation" : "no";
+  let m;
+  if ((m = ua.match(/Edg(?:e|A|iOS)?\/([\d.]+)/))) out.browser = "Edge " + m[1];
+  else if ((m = ua.match(/OPR\/([\d.]+)/)) || (m = ua.match(/Opera\/([\d.]+)/))) out.browser = "Opera " + m[1];
+  else if ((m = ua.match(/SamsungBrowser\/([\d.]+)/))) out.browser = "Samsung Internet " + m[1];
+  else if ((m = ua.match(/Firefox\/([\d.]+)/))) out.browser = "Firefox " + m[1];
+  else if ((m = ua.match(/Chrome\/([\d.]+)/))) out.browser = "Chrome " + m[1];
+  else if (/Safari/.test(ua) && (m = ua.match(/Version\/([\d.]+)/))) out.browser = "Safari " + m[1];
+  else if ((m = ua.match(/MSIE ([\d.]+)/)) || (m = ua.match(/rv:([\d.]+)\) like Gecko/))) out.browser = "Internet Explorer " + m[1];
+  else out.browser = "unknown";
+  out.engine = /Gecko\/\d/.test(ua) && /Firefox/.test(ua) ? "Gecko" : /AppleWebKit/.test(ua) ? (/Chrome|Edg|OPR/.test(ua) ? "Blink" : "WebKit") : /Trident/.test(ua) ? "Trident" : "?";
+  if ((m = ua.match(/Windows NT ([\d.]+)/))) out.os = "Windows " + ({ "10.0": "10/11", "6.3": "8.1", "6.2": "8", "6.1": "7" }[m[1]] || m[1]);
+  else if ((m = ua.match(/Android ([\d.]+)/))) out.os = "Android " + m[1];
+  else if (/iPhone|iPad|iPod/.test(ua) && (m = ua.match(/OS ([\d_]+)/))) out.os = "iOS " + m[1].replace(/_/g, ".");
+  else if ((m = ua.match(/Mac OS X ([\d_]+)/))) out.os = "macOS " + m[1].replace(/_/g, ".");
+  else if (/CrOS/.test(ua)) out.os = "ChromeOS";
+  else if (/Linux/.test(ua)) out.os = "Linux";
+  else out.os = "unknown";
+  out.device = /iPad|Tablet/.test(ua) ? "Tablet" : /Mobi|iPhone|Android.*Mobile/.test(ua) ? "Mobile" : "Desktop";
+  return out;
+}
+Impl["ua-parser"] = (root) => {
+  const inp = UIKit.area("User-Agent string", { value: navigator.userAgent || "" });
+  const o = UIKit.out();
+  const run = () => {
+    const ua = inp.input.value.trim(); if (!ua) return o.set("paste a User-Agent string");
+    const d = parseUA(ua);
+    o.clear();
+    o.line("browser : " + d.browser, "v");
+    o.line("engine  : " + d.engine, "v");
+    o.line("OS      : " + d.os, "v");
+    o.line("device  : " + d.device, "v");
+    o.line("bot     : " + d.bot, d.bot === "no" ? "dim" : "warn");
+  };
+  run();
+  root.append(
+    UIKit.panel("Input", null, inp.wrap, el("div", { class: "row" }, UIKit.btn("Parse", run, "primary"), UIKit.btn("Use mine", () => { inp.input.value = navigator.userAgent; run(); }, "ghost"))),
+    UIKit.panel("Parsed", null, o.node));
+};
+
+/* ===================== SAML DECODER ===================== */
+function prettyXml(xml) {
+  xml = xml.replace(/\r?\n/g, "").replace(/>\s+</g, "><").trim();
+  let out = "", pad = 0;
+  xml.split(/(?=<)/).forEach(node => {
+    if (!node) return;
+    if (/^<\//.test(node)) pad = Math.max(0, pad - 1);
+    out += "  ".repeat(pad) + node + "\n";
+    if (/^<[^!?][^>]*[^/]>$/.test(node) && !/<\/.+>$/.test(node) && !/\/>$/.test(node)) pad++;
+  });
+  return out.trim();
+}
+async function samlInflate(bytes) {
+  for (const fmt of ["deflate-raw", "deflate", "gzip"]) {
+    try { const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(fmt)); return new Uint8Array(await new Response(s).arrayBuffer()); } catch {}
+  }
+  return null;
+}
+Impl["saml-decoder"] = (root) => {
+  const inp = UIKit.area("SAMLRequest / SAMLResponse (base64)", { placeholder: "PHNhbWxw… or URL-encoded redirect blob" });
+  const o = UIKit.out();
+  const xmlOut = UIKit.out();
+  const run = async () => {
+    o.clear(); xmlOut.clear();
+    let raw = inp.input.value.trim();
+    if (!raw) return o.line("paste a SAML blob", "err");
+    if (/%[0-9a-f]{2}/i.test(raw)) { try { raw = decodeURIComponent(raw); } catch {} }
+    let bytes;
+    try { bytes = Uint8Array.from(atob(raw.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0)); }
+    catch { return o.line("not valid base64", "err"); }
+    let xml = Bytes.toUtf8(bytes);
+    if (!/^\s*<|<\w+:?\w*[\s>]/.test(xml.slice(0, 40))) {
+      const inf = await samlInflate(bytes);
+      if (inf) xml = Bytes.toUtf8(inf);
+    }
+    if (!/</.test(xml)) return o.line("could not decode to XML (tried base64 + DEFLATE)", "err");
+    xmlOut.set(prettyXml(xml));
+    const grab = (re) => (xml.match(re) || [])[1];
+    o.line("EXTRACTED", "k");
+    const issuer = grab(/<(?:\w+:)?Issuer[^>]*>([^<]+)</);
+    const nameid = grab(/<(?:\w+:)?NameID[^>]*>([^<]+)</);
+    const dest = grab(/Destination="([^"]+)"/);
+    const inresp = grab(/InResponseTo="([^"]+)"/);
+    const nb = grab(/NotBefore="([^"]+)"/), noa = grab(/NotOnOrAfter="([^"]+)"/);
+    if (issuer) o.line("Issuer       : " + issuer, "v");
+    if (nameid) o.line("NameID       : " + nameid, "v");
+    if (dest) o.line("Destination  : " + dest, "v");
+    if (inresp) o.line("InResponseTo : " + inresp, "v");
+    if (nb || noa) o.line("Validity     : " + (nb || "?") + " → " + (noa || "?"), "v");
+    const attrs = [...xml.matchAll(/<(?:\w+:)?Attribute\s+[^>]*Name="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?Attribute>/g)];
+    if (attrs.length) { o.line(""); o.line("ATTRIBUTES", "k"); attrs.forEach(a => { const vals = [...a[2].matchAll(/<(?:\w+:)?AttributeValue[^>]*>([^<]*)</g)].map(v => v[1]); o.line("  " + a[1] + " = " + vals.join(", "), "v"); }); }
+    History.add("SAML Decoder", issuer || "decoded");
+  };
+  root.append(
+    UIKit.panel("Input", null, inp.wrap, el("div", { class: "row" }, UIKit.btn("Decode", run, "primary"))),
+    UIKit.panel("Extracted", null, o.node),
+    UIKit.panel("XML", UIKit.copyBtn(() => xmlOut.node.textContent), xmlOut.node));
+};
+
 /* ===================== HISTORY (shared) ===================== */
 async function renderHistory(node) {
   node.querySelector(".tool-body")?.remove();

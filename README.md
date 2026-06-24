@@ -12,7 +12,7 @@ CDN) and it runs. No build step, no bundler, no npm, no server-side compute.
 
 ## Status — Functional suite
 
-The shell **and all 77 tools** (70 universal + 7 daemon-only) are implemented. Browser-native tools run on
+The shell **and all 81 tools** (74 universal + 7 daemon-only) are implemented. Browser-native tools run on
 desktop and iOS; daemon tools render full protocol UIs that activate when the
 WebSocket is connected. Verified with a headless Playwright smoke test
 (`test/smoke.mjs`): both layouts mount with no runtime errors, all routes render, and the word "daemon" never appears anywhere in the iOS build.

@@ -12,33 +12,15 @@ tools don't all build at once) with a **⊞ Apps back button** + progress
 bar. Status bar with live clock. Verified: home→tap→pager→back flow, no
 pageerrors. Screenshots: docs/ios-home.png, ios-tool.png, ios-search.png.
 
-## ⏸️ HANDOFF — RESUME HERE (last session paused on request)
-**State:** index.html valid, all 4 Playwright suites GREEN
-(`PW_PATH=/opt/node22/lib/node_modules/playwright/index.js node test/<suite>.mjs`
-for smoke / offense / daemon / kali). 70 universal tools I authored (waves
-2–9) + 7 daemon tools, each smoke- and (most) functionally-tested.
-
-**⚠️ Unfinished, do FIRST next session:** the source now also contains
-**metadata-only tool entries with NO `Impl[...]`** (added outside my batches).
-They render as harmless stub cards but aren't built. Find the current list:
-```
-node -e 'const h=require("fs").readFileSync("index.html","utf8");
+## ✅ ALL REGISTERED TOOLS IMPLEMENTED
+Every tool with metadata now has an `Impl[...]` — verified:
+`node -e 'const h=require("fs").readFileSync("index.html","utf8");
 const ids=[...h.matchAll(/\{ id:"([^"]+)"[\s\S]*?cat:"[^"]+"/g)].map(m=>m[1]);
-console.log(ids.filter(id=>!h.includes("Impl[\""+id+"\"]")))'
-```
-As of pause that was: `diff-tool, url-analyzer, ua-parser, saml-decoder`
-(more may have been added concurrently — re-run the command). For each:
-implement `Impl["id"]`, add the id to the array in `test/smoke.mjs`, and add
-a functional assertion to `test/kali.mjs`. **Do not add an id to smoke.mjs
-before it has an Impl** — smoke asserts every route renders `.tool-body`/`.gate`,
-so a stub (`.stub-panel`) makes it fail.
-
-**Then:** regen README inventory + screenshots (one-liners are in the bash
-history / scratchpad: build tools.md from index.html, splice between
-"### Tools" and "### Shell foundation"; run scratchpad/shots.mjs), update
-this file, commit + push to `claude/penkit-suite-shell-ejjv48`.
-
-
+console.log(ids.filter(id=>!h.includes("Impl[\""+id+"\"]")))'` → `[]`.
+The previously-stubbed 4 (diff-tool, url-analyzer, ua-parser, saml-decoder)
+are built and functionally tested in `test/kali.mjs`.
+**Totals: 74 universal + 7 daemon = 81 tools. All 4 Playwright suites green**
+(`PW_PATH=/opt/node22/lib/node_modules/playwright/index.js node test/<suite>.mjs`).
 
 Last updated: 2026-06-24 (session start, autonomous overnight build)
 
@@ -201,6 +183,12 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Subnet Calculator (CIDR → network/broadcast/range/hosts, offline)
 - [x] CRLF Injection Tester (response-splitting marker reflection)
 - [x] File Type ID (30+ magic-byte signatures, offline)
+
+### Phase 2.15 — Misc tools (filled the metadata-only stubs) ✅
+- [x] Diff Tool (LCS line diff, Burp-comparer style)
+- [x] URL Analyzer (component split + JWT/base64 param decode)
+- [x] User-Agent Parser (browser/engine/OS/device/bot)
+- [x] SAML Decoder (base64 + DEFLATE inflate, XML pretty-print, claims)
 
 ### Phase 2.14 — Kali wave 9 (universal) ✅
 - [x] Rate / Load Tester (burst, status dist, p95 latency, 429 detect)

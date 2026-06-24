@@ -534,6 +534,62 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close(); s.close();
 }
 
+/* Diff Tool */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/diff-tool', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain textarea').nth(0).fill('alpha\nbeta\ngamma');
+  await p.locator('#dMain textarea').nth(1).fill('alpha\nDELTA\ngamma');
+  await p.locator('#dMain').getByText('Compare', { exact: true }).click();
+  await p.waitForTimeout(200);
+  const txt = await out(p);
+  ok('Diff Tool shows +/- lines', /- beta/.test(txt) && /\+ DELTA/.test(txt));
+  await p.close();
+}
+
+/* URL Analyzer — decodes embedded JWT */
+{
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYWRtaW4ifQ.sig';
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/url-analyzer', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill('https://app.test:8443/a/b?token=' + jwt + '&id=5#frag');
+  await p.locator('#dMain').getByText('Analyze', { exact: true }).click();
+  await p.waitForTimeout(200);
+  const txt = await out(p);
+  ok('URL Analyzer splits + decodes JWT param', /app\.test/.test(txt) && /8443/.test(txt) && /"role":"admin"/.test(txt));
+  await p.close();
+}
+
+/* User-Agent Parser */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/ua-parser', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain textarea').first().fill('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+  await p.locator('#dMain').getByText('Parse', { exact: true }).click();
+  await p.waitForTimeout(150);
+  const txt = await out(p);
+  ok('UA Parser detects Chrome + Windows + Blink', /Chrome 120/.test(txt) && /Windows/.test(txt) && /Blink/.test(txt));
+  await p.close();
+}
+
+/* SAML Decoder — base64 XML (POST binding) */
+{
+  const xml = '<samlp:Response xmlns:samlp="x"><saml:Issuer>https://idp.test/meta</saml:Issuer><saml:Assertion><saml:Subject><saml:NameID>jane@test</saml:NameID></saml:Subject><saml:Conditions NotBefore="2024-01-01T00:00:00Z" NotOnOrAfter="2030-01-01T00:00:00Z"/></saml:Assertion></samlp:Response>';
+  const b64 = Buffer.from(xml).toString('base64');
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/saml-decoder', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain textarea').first().fill(b64);
+  await p.locator('#dMain').getByText('Decode', { exact: true }).click();
+  await p.waitForTimeout(300);
+  const txt = await out(p);
+  ok('SAML Decoder extracts issuer + NameID', /idp\.test\/meta/.test(txt) && /jane@test/.test(txt));
+  await p.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);
