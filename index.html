@@ -331,6 +331,85 @@ body[data-mode="ios"] #app.desktop { display: none; }
 #banner .bn-txt small { display: block; color: var(--txt-dim); font-size: 11px; }
 #banner .bn-close { color: var(--txt-faint); cursor: pointer; padding: 2px 6px; font-size: 16px; }
 
+/* ============================================================ TOOL KIT */
+.tool-body { display: flex; flex-direction: column; gap: 14px; }
+.panel {
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-1); overflow: hidden;
+}
+.panel > .p-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-bottom: 1px solid var(--line-soft);
+  font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--txt-faint);
+}
+.panel > .p-head .spacer { flex: 1; }
+.panel > .p-body { padding: 13px; display: flex; flex-direction: column; gap: 12px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.fld { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; }
+.fld.grow2 { flex: 2; }
+.fld > label { font-size: 11px; color: var(--txt-dim); letter-spacing: .03em; }
+.fld input, .fld select, .fld textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--txt);
+  padding: 9px 11px; outline: none; width: 100%; min-height: 40px;
+}
+.fld textarea { resize: vertical; min-height: 90px; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+.fld input:focus, .fld select:focus, .fld textarea:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px rgba(52,211,153,.12); }
+.fld.mono input { font-family: var(--mono); font-size: 12px; }
+.hint { font-size: 11px; color: var(--txt-faint); }
+
+.out {
+  font-family: var(--mono); font-size: 12px; line-height: 1.55; background: #070b0a;
+  border: 1px solid var(--line-soft); border-radius: 8px; padding: 11px 13px;
+  white-space: pre-wrap; word-break: break-word; overflow-x: auto; max-height: 460px; overflow-y: auto;
+}
+.out:empty::before { content: "—"; color: var(--txt-faint); }
+.out .ok { color: var(--accent); } .out .warn { color: var(--amber); }
+.out .err { color: var(--red); } .out .dim { color: var(--txt-faint); }
+.out .k { color: var(--cyan); } .out .v { color: var(--txt); } .out .s { color: var(--violet); }
+
+.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.kv td { padding: 6px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.kv td:first-child { color: var(--txt-dim); white-space: nowrap; width: 1%; font-family: var(--mono); }
+.kv td:last-child { font-family: var(--mono); word-break: break-word; }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th { text-align: left; color: var(--txt-faint); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: .06em; padding: 6px 9px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg-1); }
+.tbl td { padding: 6px 9px; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); }
+.tbl tr:hover td { background: var(--bg-2); }
+
+.grade { font-family: var(--mono); font-weight: 700; font-size: 26px; width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center; }
+.grade.A { color: var(--accent); background: rgba(52,211,153,.12); }
+.grade.B { color: #86efac; background: rgba(134,239,172,.10); }
+.grade.C { color: var(--amber); background: rgba(245,165,36,.12); }
+.grade.D { color: #fb923c; background: rgba(251,146,60,.12); }
+.grade.F { color: var(--red); background: rgba(244,81,108,.12); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip {
+  font-size: 11px; font-family: var(--mono); padding: 5px 10px; border-radius: 999px;
+  background: var(--bg-3); border: 1px solid var(--line); color: var(--txt-dim); cursor: pointer; user-select: none;
+}
+.chip:hover { border-color: var(--accent-dim); color: var(--txt); }
+.chip.on { background: var(--accent); color: #04110c; border-color: var(--accent); font-weight: 600; }
+.sev-crit { color: var(--red); } .sev-high { color: #fb923c; } .sev-med { color: var(--amber); }
+.sev-low { color: var(--cyan); } .sev-info { color: var(--txt-dim); }
+.tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--bg-3); border: 1px solid var(--line); color: var(--txt-dim); }
+
+.list-row { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg); }
+.list-row + .list-row { margin-top: 7px; }
+.list-row .lr-main { flex: 1; min-width: 0; }
+.list-row .lr-title { font-size: 13px; }
+.list-row .lr-sub { font-size: 11px; color: var(--txt-faint); font-family: var(--mono); }
+.list-row code { font-family: var(--mono); font-size: 12px; color: var(--txt); }
+
+.bar { height: 6px; border-radius: 6px; background: var(--bg-3); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+.muted { color: var(--txt-faint); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.right { margin-left: auto; }
+.copy { cursor: pointer; color: var(--txt-faint); font-size: 11px; }
+.copy:hover { color: var(--accent); }
+.ios-back { display: inline-flex; align-items: center; gap: 6px; color: var(--cyan); font-size: 14px; margin-bottom: 12px; cursor: pointer; min-height: 32px; }
+
 .hidden { display: none !important; }
 </style>
 </head>
@@ -711,6 +790,268 @@ const Router = (() => {
 })();
 
 /* --------------------------------------------------------------------- *
+ *  Net — fetch wrapper honouring an optional user CORS proxy + DoH helper
+ * --------------------------------------------------------------------- */
+const Net = (() => {
+  function proxied(url) {
+    const p = Settings.get("corsProxy", "");
+    if (!p) return url;
+    return p.includes("{url}") ? p.replace("{url}", encodeURIComponent(url)) : p + url;
+  }
+  async function fetchURL(url, opts = {}, useProxy = true) {
+    const target = useProxy ? proxied(url) : url;
+    return fetch(target, opts);
+  }
+  async function doh(name, type = "A") {
+    const provider = Settings.get("dohProvider", "cloudflare");
+    const base = provider === "google"
+      ? `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`
+      : `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
+    const r = await fetch(base, { headers: { accept: "application/dns-json" } });
+    if (!r.ok) throw new Error("DoH HTTP " + r.status);
+    return r.json();
+  }
+  return { fetchURL, doh, proxied };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  UIKit — shared widgets for tool implementations
+ * --------------------------------------------------------------------- */
+const UIKit = (() => {
+  const field = (label, attrs = {}) => {
+    const input = el("input", attrs);
+    return { wrap: el("div", { class: "fld" + (attrs.mono ? " mono" : "") }, el("label", {}, label), input), input };
+  };
+  const area = (label, attrs = {}) => {
+    const ta = el("textarea", attrs);
+    return { wrap: el("div", { class: "fld grow2" }, el("label", {}, label), ta), input: ta };
+  };
+  const select = (label, options, attrs = {}) => {
+    const sel = el("select", attrs, ...options.map(o => {
+      const [val, txt] = Array.isArray(o) ? o : [o, o];
+      return el("option", { value: val }, txt);
+    }));
+    return { wrap: el("div", { class: "fld" }, el("label", {}, label), sel), input: sel };
+  };
+  const btn = (label, onclick, variant = "") => el("div", { class: "btn " + variant, onclick }, label);
+  const panel = (title, headRight, ...children) => {
+    const head = el("div", { class: "p-head" }, title, el("span", { class: "spacer" }));
+    if (headRight) head.appendChild(headRight);
+    return el("div", { class: "panel" }, head, el("div", { class: "p-body" }, ...children));
+  };
+  const out = () => {
+    const node = el("pre", { class: "out" });
+    return {
+      node,
+      clear() { node.textContent = ""; return this; },
+      write(text, cls) { node.appendChild(el("span", cls ? { class: cls } : {}, text)); node.scrollTop = node.scrollHeight; return this; },
+      line(text, cls) { this.write(text + "\n", cls); return this; },
+      set(text) { node.textContent = text; return this; },
+    };
+  };
+  const kv = (obj) => {
+    const t = el("table", { class: "kv" });
+    for (const [k, v] of Object.entries(obj)) {
+      t.appendChild(el("tr", {}, el("td", {}, k), el("td", {}, String(v))));
+    }
+    return t;
+  };
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); Toast.show("Copied"); }
+    catch { Toast.show("Copy failed", "err"); }
+  }
+  const copyBtn = (getText) => el("span", { class: "copy", onclick: () => copy(typeof getText === "function" ? getText() : getText) }, "⎘ copy");
+  return { field, area, select, btn, panel, out, kv, copy, copyBtn };
+})();
+
+/* lightweight toast (distinct from the install banner) */
+const Toast = (() => {
+  let node;
+  function show(msg, kind = "ok") {
+    if (!node) { node = el("div", {}); document.body.appendChild(node); }
+    Object.assign(node.style, {
+      position: "fixed", left: "50%", bottom: "calc(var(--safe-b) + 70px)", transform: "translateX(-50%)",
+      background: "var(--bg-2)", border: "1px solid var(--line)", borderRadius: "8px",
+      padding: "8px 14px", fontSize: "13px", zIndex: 1000, color: kind === "err" ? "var(--red)" : "var(--accent)",
+      boxShadow: "0 8px 24px -10px #000", opacity: "0", transition: "opacity .15s", pointerEvents: "none",
+    });
+    node.textContent = msg;
+    requestAnimationFrame(() => node.style.opacity = "1");
+    clearTimeout(show._t); show._t = setTimeout(() => { if (node) node.style.opacity = "0"; }, 1400);
+  }
+  return { show };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  Impl — tool implementations registry. Populated by Tool* sections
+ *  below. Browser-native impls render identically on desktop and iOS.
+ * --------------------------------------------------------------------- */
+const Impl = {};
+
+/* shared low-level helpers for tools */
+const Bytes = {
+  fromB64url(str) {
+    str = String(str).replace(/-/g, "+").replace(/_/g, "/");
+    const pad = str.length % 4; if (pad) str += "=".repeat(4 - pad);
+    const bin = atob(str); const b = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+    return b;
+  },
+  toUtf8(bytes) { try { return new TextDecoder().decode(bytes); } catch { return ""; } },
+  enc(str) { return new TextEncoder().encode(str); },
+  toHex(buf) { return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join(""); },
+};
+function relTime(ts) {
+  const d = ts * 1000 - Date.now(); const a = Math.abs(d);
+  const u = [["d",864e5],["h",36e5],["m",6e4],["s",1e3]];
+  for (const [s, ms] of u) if (a >= ms) { const n = Math.round(a / ms); return (d < 0 ? n + s + " ago" : "in " + n + s); }
+  return "now";
+}
+
+/* ===================== JWT ANALYZER ===================== */
+Impl["jwt-analyzer"] = (root) => {
+  const tok = UIKit.area("JWT token", { placeholder: "eyJhbGciOi...", spellcheck: "false" });
+  const sec = UIKit.field("HMAC secret (HS256/384/512 verify)", { placeholder: "your-256-bit-secret", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const raw = tok.input.value.trim();
+    const parts = raw.split(".");
+    if (parts.length < 2) return o.line("Not a JWT — expected header.payload.signature", "err");
+    let header, payload;
+    try { header = JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[0]))); }
+    catch { return o.line("Bad header segment", "err"); }
+    try { payload = JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[1]))); }
+    catch { return o.line("Bad payload segment", "err"); }
+
+    o.line("HEADER", "k"); o.line(JSON.stringify(header, null, 2)); o.line("");
+    o.line("PAYLOAD", "k"); o.line(JSON.stringify(payload, null, 2)); o.line("");
+
+    o.line("CLAIM AUDIT", "k");
+    const alg = (header.alg || "").toUpperCase();
+    if (alg === "NONE") o.line("⚠ alg=none — signature stripped; trivially forgeable", "err");
+    else o.line("alg: " + alg, "dim");
+    const nowS = Math.floor(Date.now() / 1000);
+    if (payload.exp != null) o.line((payload.exp < nowS ? "⚠ exp " : "exp ") + new Date(payload.exp * 1000).toISOString() + " (" + relTime(payload.exp) + ")", payload.exp < nowS ? "err" : "ok");
+    else o.line("⚠ no exp claim — token never expires", "warn");
+    if (payload.nbf != null) o.line((payload.nbf > nowS ? "⚠ nbf " : "nbf ") + relTime(payload.nbf), payload.nbf > nowS ? "warn" : "dim");
+    if (payload.iat != null) o.line("iat " + relTime(payload.iat), "dim");
+    for (const c of ["iss", "aud", "sub"]) if (payload[c] != null) o.line(c + ": " + payload[c], "dim");
+    o.line("");
+
+    o.line("SIGNATURE", "k");
+    if (parts.length < 3 || !parts[2]) { o.line("no signature present", "warn"); return; }
+    if (!alg.startsWith("HS")) { o.line("verify for " + alg + " needs a public key (RS/ES) — HMAC verify only here", "dim"); return; }
+    const secret = sec.input.value;
+    if (!secret) { o.line("enter the HMAC secret above to verify", "dim"); return; }
+    const hashName = { HS256: "SHA-256", HS384: "SHA-384", HS512: "SHA-512" }[alg] || "SHA-256";
+    try {
+      const key = await crypto.subtle.importKey("raw", Bytes.enc(secret), { name: "HMAC", hash: hashName }, false, ["sign"]);
+      const sig = await crypto.subtle.sign("HMAC", key, Bytes.enc(parts[0] + "." + parts[1]));
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      o.line(b64 === parts[2] ? "✓ signature VALID for given secret" : "✗ signature INVALID for given secret", b64 === parts[2] ? "ok" : "err");
+    } catch (e) { o.line("verify error: " + e.message, "err"); }
+  };
+  root.append(
+    UIKit.panel("Token", null, tok.wrap, sec.wrap,
+      el("div", { class: "row" }, UIKit.btn("Decode & verify", run, "primary"),
+        UIKit.btn("Clear", () => { tok.input.value = ""; o.clear(); }))),
+    UIKit.panel("Analysis", null, o.node));
+  tok.input.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run(); });
+};
+
+/* ===================== HEADER INSPECTOR ===================== */
+Impl["header-inspector"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://example.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const gradeBox = el("div", {});
+  const SEC_CHECKS = [
+    { h: "strict-transport-security", name: "HSTS", w: 2, why: "forces HTTPS" },
+    { h: "content-security-policy", name: "CSP", w: 2, why: "mitigates XSS/injection" },
+    { h: "x-content-type-options", name: "X-Content-Type-Options", w: 1, want: "nosniff" },
+    { h: "x-frame-options", name: "X-Frame-Options / frame-ancestors", w: 1, why: "clickjacking" },
+    { h: "referrer-policy", name: "Referrer-Policy", w: 1, why: "referrer leak" },
+    { h: "permissions-policy", name: "Permissions-Policy", w: 1, why: "feature lockdown" },
+  ];
+  const run = async () => {
+    o.clear(); gradeBox.innerHTML = "";
+    const target = url.input.value.trim();
+    if (!/^https?:\/\//.test(target)) return o.line("Enter a full http(s):// URL", "err");
+    o.line("→ GET " + target + (Settings.get("corsProxy", "") ? " (via proxy)" : ""), "dim");
+    let res;
+    try { res = await Net.fetchURL(target, { method: "GET", redirect: "follow" }); }
+    catch (e) { return o.line("fetch failed: " + e.message + "\n(cross-origin reads are limited by CORS — set a CORS proxy in Settings)", "err"); }
+    const headers = {}; res.headers.forEach((v, k) => headers[k.toLowerCase()] = v);
+    o.line("status " + res.status + " " + res.statusText, res.ok ? "ok" : "warn");
+    o.line("");
+    o.line("RESPONSE HEADERS (" + Object.keys(headers).length + " readable)", "k");
+    if (!Object.keys(headers).length) o.line("none readable — likely opaque/CORS-restricted response", "warn");
+    for (const [k, v] of Object.entries(headers).sort()) o.line(k + ": " + v, "dim");
+    o.line("");
+
+    o.line("SECURITY AUDIT", "k");
+    let score = 0, max = 0;
+    const csp = headers["content-security-policy"] || "";
+    for (const c of SEC_CHECKS) {
+      max += c.w;
+      let present = c.h in headers;
+      if (c.h === "x-frame-options") present = present || /frame-ancestors/i.test(csp);
+      const okVal = !c.want || (headers[c.h] || "").toLowerCase().includes(c.want);
+      if (present && okVal) { score += c.w; o.line("✓ " + c.name, "ok"); }
+      else o.line("✗ " + c.name + " — missing" + (c.why ? " (" + c.why + ")" : ""), "warn");
+    }
+    const acao = headers["access-control-allow-origin"];
+    if (acao === "*") o.line("⚠ Access-Control-Allow-Origin: * (open CORS)", "err");
+    for (const d of ["server", "x-powered-by", "x-aspnet-version"]) if (headers[d]) o.line("ℹ discloses " + d + ": " + headers[d], "dim");
+
+    const pct = score / max;
+    const letter = pct >= .9 ? "A" : pct >= .7 ? "B" : pct >= .5 ? "C" : pct >= .3 ? "D" : "F";
+    gradeBox.appendChild(el("div", { class: "row" },
+      el("div", { class: "grade " + letter }, letter),
+      el("div", {}, el("div", {}, "Security header score"), el("div", { class: "muted" }, score + " / " + max + " weighted checks"))));
+  };
+  root.append(
+    UIKit.panel("Request", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Inspect headers", run, "primary"))),
+    UIKit.panel("Grade", null, gradeBox),
+    UIKit.panel("Output", null, o.node));
+  url.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== DNS RECON ===================== */
+Impl["dns-recon"] = (root) => {
+  const TYPES = ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA", "CAA"];
+  const dom = UIKit.field("Domain or host", { placeholder: "example.com", mono: true });
+  const sel = new Set(["A", "AAAA", "MX", "TXT"]);
+  const chips = el("div", { class: "chips" }, ...TYPES.map(t => {
+    const c = el("div", { class: "chip" + (sel.has(t) ? " on" : ""), onclick: () => { sel.has(t) ? sel.delete(t) : sel.add(t); c.classList.toggle("on"); } }, t);
+    return c;
+  }));
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const name = dom.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!name) return o.line("Enter a domain", "err");
+    const types = TYPES.filter(t => sel.has(t));
+    o.line("resolving " + name + " via DoH (" + Settings.get("dohProvider", "cloudflare") + ")", "dim"); o.line("");
+    for (const type of types) {
+      try {
+        const data = await Net.doh(name, type);
+        const ans = data.Answer || [];
+        if (!ans.length) { o.line(type.padEnd(6) + " —", "dim"); continue; }
+        for (const a of ans) o.line(type.padEnd(6) + " " + a.data + "  ", "v");
+      } catch (e) { o.line(type.padEnd(6) + " error: " + e.message, "err"); }
+    }
+    o.line(""); o.line("done", "ok");
+  };
+  root.append(
+    UIKit.panel("Query", null, dom.wrap,
+      el("div", { class: "fld" }, el("label", {}, "Record types"), chips),
+      el("div", { class: "row" }, UIKit.btn("Resolve", run, "primary"))),
+    UIKit.panel("Records", null, o.node));
+  dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* --------------------------------------------------------------------- *
  *  Shared tool-view renderer (used by desktop main + reused content)
  * --------------------------------------------------------------------- */
 function toolHeader(tool) {
@@ -756,7 +1097,10 @@ function daemonGate(tool) {
 function renderToolView(container, tool) {
   container.innerHTML = "";
   container.appendChild(toolHeader(tool));
-  container.appendChild(tool.daemon ? daemonGate(tool) : stubBody(tool));
+  if (tool.daemon) { container.appendChild(daemonGate(tool)); return; }
+  const impl = Impl[tool.id];
+  if (impl) { const body = el("div", { class: "tool-body" }); container.appendChild(body); try { impl(body, tool); } catch (e) { body.appendChild(el("div", { class: "out err" }, "tool error: " + e.message)); } }
+  else container.appendChild(stubBody(tool));
 }
 
 /* --------------------------------------------------------------------- *
@@ -952,16 +1296,25 @@ const IOSUI = (() => {
         el("div", { class: "ic-open", onclick: () => openTool(tool) }, "Open " + tool.name + " →")));
   }
   function openTool(tool) {
-    // Foundation: tools are stubs. Show a lightweight detail card in place.
     const page = $$("#iosPager .page")[pageIndex];
     page.innerHTML = "";
-    page.appendChild(el("div", { class: "ios-card" },
-      el("div", { class: "ic-top" },
-        el("div", { class: "ic-ico" }, tool.icon),
-        el("div", {}, el("div", { class: "ic-name" }, tool.name), el("div", { class: "ic-sub" }, "module scaffold"))),
-      el("div", { class: "ic-desc" }, "🚧 The interface for this tool ships next. Shell, routing, swipe nav and IndexedDB are live."),
-      el("div", { class: "ic-feat" }, ...(tool.feat || []).map(f => el("span", {}, f))),
-      el("div", { class: "ic-open", onclick: () => { page.innerHTML = ""; page.appendChild(toolPage(tool).firstChild); } }, "← Back")));
+    page.appendChild(el("div", { class: "ios-back", onclick: () => { page.innerHTML = ""; page.appendChild(toolPage(tool).firstChild); } }, "← Tools"));
+    const impl = Impl[tool.id];
+    if (impl) {
+      page.appendChild(el("div", { class: "tool-head", style: "margin-bottom:14px" },
+        el("div", { class: "t-ico" }, tool.icon),
+        el("div", {}, el("h1", { style: "font-size:18px" }, tool.name), el("p", {}, tool.desc))));
+      const body = el("div", { class: "tool-body" });
+      page.appendChild(body);
+      try { impl(body, tool); } catch (e) { body.appendChild(el("div", { class: "out err" }, "tool error: " + e.message)); }
+    } else {
+      page.appendChild(el("div", { class: "ios-card" },
+        el("div", { class: "ic-top" },
+          el("div", { class: "ic-ico" }, tool.icon),
+          el("div", {}, el("div", { class: "ic-name" }, tool.name), el("div", { class: "ic-sub" }, "module scaffold"))),
+        el("div", { class: "ic-desc" }, "🚧 The interface for this tool ships next."),
+        el("div", { class: "ic-feat" }, ...(tool.feat || []).map(f => el("span", {}, f)))));
+    }
   }
 
   function buildTabs() {
