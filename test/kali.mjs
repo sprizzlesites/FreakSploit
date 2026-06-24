@@ -248,6 +248,71 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close();
 }
 
+/* Prototype Pollution Scanner */
+{
+  const { s, url } = await serve((req, res) => res.end('<html><body><script>const o=lodash.merge({}, JSON.parse(location.hash.slice(1))); obj["__proto__"]=1;<\/script></body></html>'));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/proto-pollution', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url);
+  await p.locator('#dMain').getByText('Scan', { exact: true }).click();
+  await p.waitForTimeout(1200);
+  const txt = await out(p);
+  ok('Proto Pollution finds merge + __proto__', /lodash merge/.test(txt) && /__proto__/.test(txt));
+  await p.close(); s.close();
+}
+
+/* Cache Poisoning Probe — reflects X-Forwarded-Host */
+{
+  const { s, url } = await serve((req, res) => res.end('<html>host=' + (req.headers['x-forwarded-host'] || '') + '</html>'));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/cache-probe', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/');
+  await p.locator('#dMain').getByText('Probe', { exact: true }).click();
+  await p.waitForTimeout(1500);
+  ok('Cache Probe detects reflected X-Forwarded-Host', /X-Forwarded-Host REFLECTED/.test(await out(p)));
+  await p.close(); s.close();
+}
+
+/* Favicon Hash — pipeline produces a stable mmh3 */
+{
+  const { s, url } = await serve((req, res) => { res.setHeader('content-type', 'image/x-icon'); res.end(Buffer.from('FREAKSPLOITFAVICON12345')); });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/favicon-hash', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url);
+  await p.locator('#dMain').getByText('Compute hash', { exact: true }).click();
+  await p.waitForTimeout(1000);
+  ok('Favicon Hash computes mmh3 + Shodan pivot', /mmh3 hash\s*:\s*-?\d+/.test(await out(p)) && /http\.favicon\.hash:/.test(await out(p)));
+  await p.close(); s.close();
+}
+
+/* Dev Utilities — epoch convert */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/dev-utils', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill('0');
+  await p.locator('#dMain').getByText('Convert', { exact: true }).first().click();
+  await p.waitForTimeout(200);
+  ok('Dev Utilities epoch→date', /1970-01-01/.test(await out(p)));
+  await p.close();
+}
+
+/* Typosquat Generator */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/typosquat', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill('example.com');
+  await p.locator('#dMain').getByText('Generate', { exact: true }).click();
+  await p.waitForTimeout(300);
+  const txt = await p.locator('#dMain').innerText();
+  ok('Typosquat generates TLD-swap + homoglyph', /example\.net/.test(txt) && /exampl3\.com/.test(txt));
+  await p.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);

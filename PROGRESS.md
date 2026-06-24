@@ -133,11 +133,20 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Cookie Analyzer (Secure/HttpOnly/SameSite/prefix audit)
 - [x] Dork Generator (Google dorks, clickable)
 
+### Phase 2.10 — Kali wave 5 (universal) ✅
+- [x] Prototype Pollution Scanner (static sink + vuln-lib-version hunt)
+- [x] Typosquat Generator (homoglyph/bitsquat/TLD-swap + DoH check)
+- [x] Favicon Hash (mmh3 verified vs Python reference, Shodan pivot)
+- [x] Mixed Content Scanner (http resources on https pages)
+- [x] Dev Utilities (epoch/UUID/base/regex)
+- [x] Cache Poisoning Probe (unkeyed header reflection)
+
 ## Backlog / next up (when user says "continue")
-1. Still browser-feasible: prototype-pollution probe, S3/cloud-bucket
-   finder, favicon-hash (shodan), typosquat/domain-permutation generator
-   (+DoH check), cache-poisoning probe, XXE helper, timestamp/UUID/regex
-   utilities, mixed-content scanner, JSON-CSRF, Wayback/archive recon.
+1. Still browser-feasible (next waves): S3/GCS/Azure bucket finder,
+   Wayback/archive URL recon, XXE payload helper, SSTI polyglot builder,
+   JSON-CSRF PoC, subresource-integrity checker, security.txt/robots
+   parser, JWKS fetch+inspect, GraphQL field-suggestion brute (when
+   introspection off), HSTS preload checker, MX/SPF spoof PoC mail.
 2. NOT feasible in-browser (document as such): HTTP request smuggling
    (can't control TE/CL via fetch), raw nmap/masscan, ARP/L2.
 3. Optional standalone sw.js for full offline navigation.

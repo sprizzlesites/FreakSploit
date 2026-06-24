@@ -620,6 +620,13 @@ const UNIVERSAL_TOOLS = [
   { id:"csp-auditor",    name:"CSP Auditor",       icon:"🧱", cat:"Web", desc:"Fetch or paste a Content-Security-Policy and grade it — unsafe-inline/eval, wildcards, missing directives.", feat:["unsafe-inline","wildcards","grade"] },
   { id:"cookie-analyzer", name:"Cookie Analyzer",  icon:"🍪", cat:"Web", desc:"Audit Set-Cookie headers for Secure, HttpOnly, SameSite, scope and __Host-/__Secure- prefix compliance.", feat:["Secure/HttpOnly","SameSite","prefixes"] },
   { id:"dork-generator", name:"Dork Generator",    icon:"🔍", cat:"Recon", desc:"Build Google dork queries for a target — exposed files, login pages, directory listings and secrets.", feat:["filetype","inurl","index of"] },
+  // --- wave 5 ---
+  { id:"proto-pollution", name:"Prototype Pollution Scanner", icon:"☣️", cat:"Offense", desc:"Statically scan a site's JS for prototype-pollution sinks (deep merge, __proto__) and known-vulnerable library versions.", feat:["merge sinks","__proto__","lib versions"] },
+  { id:"typosquat",      name:"Typosquat Generator", icon:"🃏", cat:"Recon", desc:"Generate domain permutations (typos, homoglyphs, TLD swaps, bitsquats) and DNS-check which are registered.", feat:["homoglyph","bitsquat","TLD swap"] },
+  { id:"favicon-hash",   name:"Favicon Hash",      icon:"🔣", cat:"Recon", desc:"Compute the MurmurHash3 favicon hash Shodan uses to fingerprint and find related hosts.", feat:["mmh3","shodan","pivot"] },
+  { id:"mixed-content",  name:"Mixed Content Scanner", icon:"⚠️", cat:"Web", desc:"Find insecure http:// resources loaded by an https:// page (scripts, styles, images, forms).", feat:["active/passive","http on https"] },
+  { id:"dev-utils",      name:"Dev Utilities",     icon:"🧮", cat:"Crypto", desc:"Epoch↔date, UUID generate/inspect, base converter and a live regex tester.", feat:["epoch","uuid","regex","base"] },
+  { id:"cache-probe",    name:"Cache Poisoning Probe", icon:"🗄️", cat:"Offense", desc:"Inject unkeyed headers (X-Forwarded-Host/Scheme) and detect reflection — a web cache poisoning indicator.", feat:["unkeyed input","X-Forwarded-Host","reflection"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -3249,6 +3256,215 @@ Impl["dork-generator"] = (root) => {
   root.append(
     UIKit.panel("Target", null, el("div", { class: "toolbar" }, dom.wrap, kw.wrap)),
     UIKit.panel("Dorks", null, list));
+};
+
+/* ===================== PROTOTYPE POLLUTION SCANNER ===================== */
+const PP_SINKS = [
+  { re: /\$\.extend\s*\(\s*true/g, n: "jQuery $.extend(true,…) deep merge", sev: "high" },
+  { re: /(?:_|lodash)\.merge\s*\(/g, n: "lodash merge()", sev: "high" },
+  { re: /(?:_|lodash)\.(?:mergeWith|defaultsDeep|set|setWith)\s*\(/g, n: "lodash deep mutator", sev: "high" },
+  { re: /\bdeepmerge\s*\(/g, n: "deepmerge()", sev: "high" },
+  { re: /\b(?:merge|deepMerge|deepExtend|extendDeep)\s*\(/g, n: "custom deep-merge fn", sev: "med" },
+  { re: /__proto__/g, n: "__proto__ reference", sev: "med" },
+  { re: /constructor\s*\[\s*['"]prototype/g, n: "constructor['prototype'] access", sev: "high" },
+  { re: /Object\.setPrototypeOf\s*\(/g, n: "Object.setPrototypeOf()", sev: "med" },
+  { re: /objectPath|dot-prop|set-value|object-assign-deep/g, n: "risky path-setter lib", sev: "med" },
+];
+const PP_LIBS = [
+  { re: /lodash[-.]?(\d+\.\d+\.\d+)/i, n: "lodash", bad: v => cmpVer(v, "4.17.12") < 0, why: "<4.17.12 prototype pollution (CVE-2019-10744)" },
+  { re: /jquery[-.]?(\d+\.\d+\.\d+)/i, n: "jQuery", bad: v => cmpVer(v, "3.4.0") < 0, why: "<3.4.0 $.extend pollution (CVE-2019-11358)" },
+];
+function cmpVer(a, b) { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; }
+Impl["proto-pollution"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const target = url.input.value.trim();
+    if (!/^https?:\/\//.test(target)) return o.line("enter a full URL", "err");
+    let html; try { html = await (await Net.fetchURL(target)).text(); } catch (e) { return o.line("fetch failed: " + e.message, "err"); }
+    const srcs = [{ label: "(html)", text: html }];
+    let ext = []; try { ext = [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("script[src]")].map(s => { try { return new URL(s.getAttribute("src"), target).href; } catch { return null; } }).filter(Boolean); } catch {}
+    o.line("scanning html + " + Math.min(ext.length, 40) + " script(s)…", "dim");
+    const pool = makePool();
+    await pool.run([...new Set(ext)].slice(0, 40), 6, async (u) => { try { srcs.push({ label: u, text: await (await Net.fetchURL(u)).text() }); } catch {} });
+    let hits = 0;
+    o.line(""); o.line("LIBRARY VERSIONS", "k");
+    for (const s of srcs) for (const lib of PP_LIBS) { const m = lib.re.exec(s.text); lib.re.lastIndex = 0; if (m && m[1] && lib.bad(m[1])) { hits++; o.line("✗ " + lib.n + " " + m[1] + " — " + lib.why, "err"); } }
+    o.line(""); o.line("SINKS", "k");
+    for (const s of srcs) for (const sink of PP_SINKS) { const c = (s.text.match(sink.re) || []).length; if (c) { hits++; o.line((sink.sev === "high" ? "⚠ " : "· ") + sink.n + " ×" + c + "  [" + (s.label.length > 40 ? "…" + s.label.slice(-38) : s.label) + "]", sink.sev === "high" ? "warn" : "dim"); } }
+    o.line(""); o.line(hits ? "⚠ " + hits + " prototype-pollution indicator(s) — review for attacker-controlled merge input" : "no obvious PP sinks found", hits ? "err" : "ok");
+    History.add("Proto Pollution", target + " · " + hits);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Scan", run, "primary"), el("span", { class: "hint" }, "static gadget hunt — confirm exploitability dynamically"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== TYPOSQUAT GENERATOR ===================== */
+function typosquat(domain) {
+  const dot = domain.lastIndexOf("."); const name = dot > 0 ? domain.slice(0, dot) : domain; const tld = dot > 0 ? domain.slice(dot + 1) : "com";
+  const out = new Set(); const HG = { o: "0", l: "1", i: "1", e: "3", a: "4", s: "5", b: "8", g: "9" };
+  const TLDS = ["com", "net", "org", "co", "io", "app", "dev", "info", "biz", "online", "site", "xyz"];
+  for (let i = 0; i < name.length; i++) {
+    out.add(name.slice(0, i) + name.slice(i + 1) + "." + tld);             // omission
+    out.add(name.slice(0, i) + name[i] + name[i] + name.slice(i) + "." + tld); // repetition
+    if (i < name.length - 1) out.add(name.slice(0, i) + name[i + 1] + name[i] + name.slice(i + 2) + "." + tld); // transposition
+    if (HG[name[i]]) out.add(name.slice(0, i) + HG[name[i]] + name.slice(i + 1) + "." + tld); // homoglyph
+    for (let bit = 0; bit < 8; bit++) { const c = name.charCodeAt(i) ^ (1 << bit); if (c >= 97 && c <= 122) out.add(name.slice(0, i) + String.fromCharCode(c) + name.slice(i + 1) + "." + tld); } // bitsquat
+  }
+  for (const t of TLDS) if (t !== tld) out.add(name + "." + t);            // TLD swap
+  for (const s of ["-login", "-secure", "-support", "app", "secure", "my"]) { out.add(name + s + "." + tld); out.add(s.replace(/^-/, "") + "-" + name + "." + tld); }
+  out.delete(domain);
+  return [...out];
+}
+Impl["typosquat"] = (root) => {
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "domain"), el("th", {}, "DNS"))), tbody);
+  const gen = () => { const list = typosquat(dom.input.value.trim()); o.set(list.length + " permutations generated. Use “DNS check” to find registered ones."); tbody.innerHTML = ""; list.forEach(d => tbody.appendChild(el("tr", { "data-d": d }, el("td", {}, d), el("td", { class: "muted" }, "—")))); return list; };
+  const check = async () => {
+    const rows = $$("tr", tbody); if (!rows.length) gen();
+    o.set("checking DNS for " + tbody.childElementCount + " domains…");
+    const pool = makePool(); let reg = 0;
+    await pool.run($$("tr", tbody), 12, async (tr) => {
+      try { const d = await Net.doh(tr.dataset.d, "A"); const cell = tr.lastChild; if ((d.Answer || []).length) { reg++; cell.textContent = "● registered"; cell.className = "sev-high"; } else { cell.textContent = "free"; cell.className = "muted"; } } catch { tr.lastChild.textContent = "?"; }
+    });
+    o.set(reg + " of " + tbody.childElementCount + " permutations resolve (potential squats/typo-traps).");
+    History.add("Typosquat", dom.input.value.trim() + " · " + reg + " registered");
+  };
+  root.append(
+    UIKit.panel("Domain", null, dom.wrap, el("div", { class: "row" }, UIKit.btn("Generate", gen, "primary"), UIKit.btn("DNS check", check))),
+    UIKit.panel("Summary", null, o.node),
+    UIKit.panel("Permutations", null, el("div", { style: "max-height:360px;overflow:auto" }, tbl)));
+};
+
+/* ===================== FAVICON HASH (Shodan mmh3) ===================== */
+function mmh3_32(key, seed = 0) {
+  const mul = (a, b) => ((a & 0xffff) * b + ((((a >>> 16) * b) & 0xffff) << 16)) >>> 0;
+  const c1 = 0xcc9e2d51, c2 = 0x1b873593; let h1 = seed >>> 0; const len = key.length, rem = len & 3, n = len - rem; let i = 0;
+  for (; i < n; i += 4) {
+    let k1 = (key.charCodeAt(i) & 0xff) | ((key.charCodeAt(i + 1) & 0xff) << 8) | ((key.charCodeAt(i + 2) & 0xff) << 16) | ((key.charCodeAt(i + 3) & 0xff) << 24);
+    k1 = mul(k1, c1); k1 = (k1 << 15) | (k1 >>> 17); k1 = mul(k1, c2);
+    h1 ^= k1; h1 = (h1 << 13) | (h1 >>> 19); h1 = (mul(h1, 5) + 0xe6546b64) >>> 0;
+  }
+  let k1 = 0;
+  if (rem === 3) k1 ^= (key.charCodeAt(i + 2) & 0xff) << 16;
+  if (rem >= 2) k1 ^= (key.charCodeAt(i + 1) & 0xff) << 8;
+  if (rem >= 1) { k1 ^= (key.charCodeAt(i) & 0xff); k1 = mul(k1, c1); k1 = (k1 << 15) | (k1 >>> 17); k1 = mul(k1, c2); h1 ^= k1; }
+  h1 ^= len; h1 ^= h1 >>> 16; h1 = mul(h1, 0x85ebca6b); h1 ^= h1 >>> 13; h1 = mul(h1, 0xc2b2ae35); h1 ^= h1 >>> 16;
+  return h1 | 0;
+}
+function faviconB64(bytes) { let bin = ""; for (const b of bytes) bin += String.fromCharCode(b); let b64 = btoa(bin), out = ""; for (let i = 0; i < b64.length; i += 76) out += b64.slice(i, i + 76) + "\n"; return out; }
+Impl["favicon-hash"] = (root) => {
+  const url = UIKit.field("Site or favicon URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    let u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    if (!/\.(ico|png|svg|jpg)$/i.test(u)) u = u.replace(/\/+$/, "") + "/favicon.ico";
+    o.line("fetching " + u, "dim");
+    try {
+      const r = await Net.fetchURL(u); if (!r.ok) return o.line("favicon HTTP " + r.status, "warn");
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const h = mmh3_32(faviconB64(buf));
+      o.line(""); o.line("favicon bytes : " + buf.length, "dim");
+      o.line("mmh3 hash     : " + h, "ok");
+      o.line(""); o.line("Shodan pivot:", "k");
+      o.line("http.favicon.hash:" + h, "v");
+      const a = el("a", { href: "https://www.shodan.io/search?query=http.favicon.hash%3A" + h, target: "_blank" }, "→ search Shodan for hosts with this favicon");
+      o.node.appendChild(a); o.node.appendChild(document.createTextNode("\n"));
+      History.add("Favicon Hash", u + " · " + h);
+    } catch (e) { o.line("failed: " + e.message + " (favicon bytes may be CORS-restricted — try a proxy)", "err"); }
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Compute hash", run, "primary"))),
+    UIKit.panel("Result", null, o.node));
+};
+
+/* ===================== MIXED CONTENT SCANNER ===================== */
+Impl["mixed-content"] = (root) => {
+  const url = UIKit.field("HTTPS URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https:\/\//.test(u)) return o.line("enter an https:// URL", "err");
+    let html; try { html = await (await Net.fetchURL(u)).text(); } catch (e) { return o.line("fetch failed: " + e.message, "err"); }
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const ACTIVE = [["script", "src"], ["link", "href"], ["iframe", "src"], ["object", "data"], ["embed", "src"], ["form", "action"]];
+    const PASSIVE = [["img", "src"], ["audio", "src"], ["video", "src"], ["source", "src"]];
+    let active = 0, passive = 0;
+    const scan = (set, label, cls) => { for (const [tag, attr] of set) doc.querySelectorAll(tag + "[" + attr + "]").forEach(n => { const v = n.getAttribute(attr) || ""; if (/^http:\/\//i.test(v)) { if (label === "ACTIVE") active++; else passive++; o.line((label === "ACTIVE" ? "⚠ " : "· ") + tag + " " + attr + ": " + v.slice(0, 80), cls); } }); };
+    o.line("ACTIVE mixed content (blocked/dangerous)", "k"); scan(ACTIVE, "ACTIVE", "err");
+    if (!active) o.line("none", "ok");
+    o.line(""); o.line("PASSIVE mixed content", "k"); scan(PASSIVE, "PASSIVE", "warn");
+    if (!passive) o.line("none", "ok");
+    o.line(""); o.line((active + passive) ? "⚠ " + active + " active + " + passive + " passive mixed-content resource(s)" : "✓ no mixed content found", (active + passive) ? "err" : "ok");
+    History.add("Mixed Content", u + " · " + (active + passive));
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Scan", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== DEV UTILITIES ===================== */
+Impl["dev-utils"] = (root) => {
+  // epoch
+  const ep = UIKit.field("Epoch (s or ms) or ISO date", { placeholder: "1718000000 or 2024-06-10", mono: true });
+  const epOut = UIKit.out();
+  const epRun = () => { const v = ep.input.value.trim(); let d; if (/^\d+$/.test(v)) d = new Date(+v * (v.length > 11 ? 1 : 1000)); else d = new Date(v); if (isNaN(d)) return epOut.set("invalid"); epOut.set("ISO   : " + d.toISOString() + "\nlocal : " + d.toString() + "\nepoch : " + Math.floor(d.getTime() / 1000) + " s / " + d.getTime() + " ms"); };
+  // uuid
+  const uuidOut = UIKit.out();
+  const genUuid = () => { const u = crypto.randomUUID ? crypto.randomUUID() : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); uuidOut.set(u + "\nversion: " + u[14]); };
+  const uuidIn = UIKit.field("Inspect UUID", { placeholder: "xxxxxxxx-xxxx-…", mono: true });
+  const inspectUuid = () => { const u = uuidIn.input.value.trim(); const ver = u[14]; let s = "version: " + ver; if (ver === "1") { const hex = (u.slice(15, 18) + u.slice(9, 13) + u.slice(0, 8)); const ts = (BigInt("0x" + hex) - 122192928000000000n) / 10000n; s += "\ntimestamp: " + new Date(Number(ts)).toISOString(); } uuidOut.set(s); };
+  // base
+  const baseIn = UIKit.field("Number", { placeholder: "255 or 0xff or 0b1010", mono: true });
+  const baseOut = UIKit.out();
+  const baseRun = () => { let v = baseIn.input.value.trim(); let n; if (/^0x/i.test(v)) n = parseInt(v, 16); else if (/^0b/i.test(v)) n = parseInt(v.slice(2), 2); else if (/^0o/i.test(v)) n = parseInt(v.slice(2), 8); else n = parseInt(v, 10); if (isNaN(n)) return baseOut.set("invalid"); baseOut.set("dec: " + n + "\nhex: 0x" + n.toString(16) + "\noct: 0o" + n.toString(8) + "\nbin: 0b" + n.toString(2)); };
+  // regex
+  const reP = UIKit.field("Regex", { placeholder: "(\\d+)-(\\d+)", mono: true });
+  const reF = UIKit.field("Flags", { value: "g", mono: true });
+  const reS = UIKit.area("Test string", {});
+  const reOut = UIKit.out();
+  const reRun = () => { try { const rx = new RegExp(reP.input.value, reF.input.value); const ms = [...reS.input.value.matchAll(reF.input.value.includes("g") ? rx : new RegExp(reP.input.value, reF.input.value + "g"))]; reOut.set(ms.length ? ms.map((m, i) => "#" + i + " “" + m[0] + "”" + (m.length > 1 ? " groups: [" + m.slice(1).join(", ") + "]" : "")).join("\n") : "no matches"); } catch (e) { reOut.set("error: " + e.message); } };
+  root.append(
+    UIKit.panel("Epoch / date", null, ep.wrap, el("div", { class: "row" }, UIKit.btn("Convert", epRun, "primary")), epOut.node),
+    UIKit.panel("UUID", null, el("div", { class: "row" }, UIKit.btn("Generate v4", genUuid, "primary"), uuidIn.wrap, UIKit.btn("Inspect", inspectUuid)), uuidOut.node),
+    UIKit.panel("Base converter", null, baseIn.wrap, el("div", { class: "row" }, UIKit.btn("Convert", baseRun, "primary")), baseOut.node),
+    UIKit.panel("Regex tester", null, el("div", { class: "toolbar" }, reP.wrap, reF.wrap), reS.wrap, el("div", { class: "row" }, UIKit.btn("Test", reRun, "primary")), reOut.node));
+};
+
+/* ===================== CACHE POISONING PROBE ===================== */
+Impl["cache-probe"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://your-site.com/", value: "https://", mono: true });
+  const o = UIKit.out();
+  const MARK = "fscache" + Math.random().toString(36).slice(2, 7) + ".test";
+  const HEADERS = ["X-Forwarded-Host", "X-Forwarded-Server", "X-Host", "X-Forwarded-Scheme", "X-Forwarded-Port", "X-Original-Host", "Forwarded"];
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    o.line("probing " + HEADERS.length + " unkeyed headers with marker " + MARK, "dim"); o.line("");
+    let hits = 0;
+    for (const h of HEADERS) {
+      try {
+        const val = h === "Forwarded" ? "host=" + MARK : (h.includes("Scheme") || h.includes("Port") ? MARK : MARK);
+        const r = await HttpKit.send({ method: "GET", url: u, headers: h + ": " + MARK });
+        if (r.text.includes(MARK)) { hits++; o.line("⚠ " + h + " REFLECTED in response — cache poisoning candidate (find the unkeyed cache and confirm)", "err"); }
+        else o.line("· " + h + " not reflected (" + r.status + ")", "dim");
+      } catch (e) { o.line("· " + h + " — " + (e.message || "blocked"), "dim"); }
+    }
+    o.line(""); o.line(hits ? "⚠ " + hits + " reflected unkeyed header(s)" : "no unkeyed header reflection detected", hits ? "err" : "ok");
+    o.line("note: some override headers are dropped by the browser — a proxy gives full coverage", "dim");
+    History.add("Cache Probe", u + " · " + hits);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Probe", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
 };
 
 /* ===================== HISTORY (shared) ===================== */
