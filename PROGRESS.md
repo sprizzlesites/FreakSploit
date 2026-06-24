@@ -166,7 +166,14 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] CRLF Injection Tester (response-splitting marker reflection)
 - [x] File Type ID (30+ magic-byte signatures, offline)
 
-> Tool count: 65 universal (iOS+desktop) + 7 daemon-only = 72 tools.
+### Phase 2.14 — Kali wave 9 (universal) ✅
+- [x] Rate / Load Tester (burst, status dist, p95 latency, 429 detect)
+- [x] Email Permutator (corporate email format OSINT)
+- [x] JSON Tools (format/minify/validate/escape with error locations)
+- [x] Shodan / Censys Query Builder (facet chips, deep links)
+- [x] File Hasher (SHA-1/256/512 of a picked file, offline)
+
+> Tool count: 70 universal (iOS+desktop) + 7 daemon-only = 77 tools.
 
 ## Backlog / next up (when user says "continue")
 1. Still browser-feasible (next waves): S3/GCS/Azure bucket finder,

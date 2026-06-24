@@ -12,14 +12,14 @@ CDN) and it runs. No build step, no bundler, no npm, no server-side compute.
 
 ## Status — Functional suite
 
-The shell **and all 72 tools** (65 universal + 7 daemon-only) are implemented. Browser-native tools run on
+The shell **and all 77 tools** (70 universal + 7 daemon-only) are implemented. Browser-native tools run on
 desktop and iOS; daemon tools render full protocol UIs that activate when the
 WebSocket is connected. Verified with a headless Playwright smoke test
 (`test/smoke.mjs`): both layouts mount with no runtime errors, all routes render, and the word "daemon" never appears anywhere in the iOS build.
 
-### Tools — 65 universal (iOS + desktop) + 7 daemon-only
+### Tools — 70 universal (iOS + desktop) + 7 daemon-only
 
-**Recon** (19)
+**Recon** (21)
 
 - 🛰️ **DNS Recon** — DNS lookups via public DNS-over-HTTPS resolvers.
 - 🌐 **Subdomain Enum** — Wordlist-driven subdomain brute force via fetch() probing.
@@ -40,6 +40,8 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - 🤖 **robots / security.txt** — Fetch and parse robots.txt, security.txt and sitemap.xml — disallowed paths often reveal hidden endpoints.
 - 🏴 **Subdomain Takeover** — Resolve a host's CNAME and fingerprint dangling cloud services (GitHub Pages, S3, Heroku, Azure…) for takeover.
 - 🌎 **IP Intel** — Resolve a host, reverse-DNS (PTR) and pull geolocation/ASN/ISP for an IP.
+- 📧 **Email Permutator** — Generate likely corporate email address formats from a name and domain for OSINT.
+- 🔭 **Shodan / Censys Query** — Build Shodan and Censys search queries from a target with facet chips (port, org, product, cert).
 
 **Web** (9)
 
@@ -53,7 +55,7 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - 🔗 **SRI Checker** — Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.
 - 🛤️ **HSTS Checker** — Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.
 
-**Offense** (25)
+**Offense** (26)
 
 - 🔓 **Secret Scanner** — Fetch a site's HTML + JS bundles + source maps and hunt leaked API keys, env vars and tokens.
 - 🛠️ **Request Forge** — Build, tamper and replay any HTTP request; import from cURL; inspect responses (repeater).
@@ -80,8 +82,9 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - 🧩 **SSTI Builder** — Per-engine server-side template injection probes (Jinja2, Twig, Freemarker, ERB, Velocity…) and a polyglot.
 - 📂 **Path Traversal / LFI** — Test a parameter for path traversal / local file inclusion with layered encodings and file-content signatures.
 - ↵ **CRLF Injection** — Inject CRLF sequences into a parameter and detect header/response splitting via reflected markers.
+- ⏱️ **Rate / Load Tester** — Fire a burst of concurrent requests to measure rate limiting, status distribution and latency percentiles.
 
-**Crypto** (11)
+**Crypto** (13)
 
 - 🔑 **JWT Analyzer** — Decode, inspect and test JWTs locally via SubtleCrypto.
 - ⛏️ **Hash Cracker** — Dictionary & brute force on hashes via WebAssembly — runs locally.
@@ -94,6 +97,8 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - 🔨 **JWT Secret Cracker** — Dictionary-attack an HS256/384/512 JWT to recover the signing secret locally via SubtleCrypto.
 - 📐 **Subnet Calculator** — Compute network, broadcast, mask, host range and count from CIDR — fully offline.
 - 📦 **File Type ID** — Identify a file's true type from its magic bytes — spot mismatched extensions, offline.
+- 🧾 **JSON Tools** — Format, minify, validate and escape/unescape JSON with precise error locations.
+- #️⃣ **File Hasher** — Compute SHA-1/256/512 of a picked file for integrity or IOC checks — fully offline.
 
 **Output** (1)
 

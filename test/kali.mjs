@@ -466,6 +466,74 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close(); s.close();
 }
 
+/* Email Permutator */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/email-permutator', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').nth(0).fill('jane');
+  await p.locator('#dMain input').nth(1).fill('doe');
+  await p.locator('#dMain input').nth(2).fill('example.com');
+  await p.waitForTimeout(200);
+  const txt = await out(p);
+  ok('Email Permutator builds formats', /jane\.doe@example\.com/.test(txt) && /jdoe@example\.com/.test(txt));
+  await p.close();
+}
+
+/* JSON Tools */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/json-tools', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain').getByText('Validate', { exact: true }).click();
+  await p.waitForTimeout(150);
+  const valid = /valid JSON/.test(await out(p));
+  await p.locator('#dMain textarea').first().fill('{bad json');
+  await p.locator('#dMain').getByText('Validate', { exact: true }).click();
+  await p.waitForTimeout(150);
+  ok('JSON Tools validates good + bad', valid && /invalid JSON/.test(await out(p)));
+  await p.close();
+}
+
+/* Shodan / Censys Query Builder */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/shodan-query', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill('example.com');
+  await p.waitForTimeout(200);
+  const txt = await out(p);
+  ok('Shodan Query builds Shodan + Censys', /hostname:example\.com/.test(txt) && /CENSYS/.test(txt));
+  await p.close();
+}
+
+/* File Hasher — SHA-256 of "abc" */
+{
+  const f = join(tmpdir(), 'fs_hash_abc.bin'); writeFileSync(f, Buffer.from('abc'));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/file-hasher', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input[type=file]').setInputFiles(f);
+  await p.waitForTimeout(600);
+  ok('File Hasher SHA-256("abc")', /ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad/.test(await out(p)));
+  await p.close();
+}
+
+/* Rate / Load Tester */
+{
+  const { s, url } = await serve((req, res) => res.end('ok'));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/rate-tester', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/');
+  await p.locator('#dMain input').nth(1).fill('8');
+  await p.locator('#dMain').getByText('Run burst', { exact: true }).click();
+  await p.waitForTimeout(1500);
+  const txt = await out(p);
+  ok('Rate Tester reports status + latency', /STATUS DISTRIBUTION/.test(txt) && /200/.test(txt) && /p95/.test(txt));
+  await p.close(); s.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);

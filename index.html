@@ -647,6 +647,12 @@ const UNIVERSAL_TOOLS = [
   { id:"subnet-calc",    name:"Subnet Calculator", icon:"📐", cat:"Crypto", desc:"Compute network, broadcast, mask, host range and count from CIDR — fully offline.", feat:["CIDR","range","hosts"] },
   { id:"crlf-tester",    name:"CRLF Injection",    icon:"↵", cat:"Offense", desc:"Inject CRLF sequences into a parameter and detect header/response splitting via reflected markers.", feat:["%0d%0a","header inject","splitting"] },
   { id:"filetype-id",    name:"File Type ID",      icon:"📦", cat:"Crypto", desc:"Identify a file's true type from its magic bytes — spot mismatched extensions, offline.", feat:["magic bytes","30+ types","offline"] },
+  // --- wave 9 ---
+  { id:"rate-tester",    name:"Rate / Load Tester", icon:"⏱️", cat:"Offense", desc:"Fire a burst of concurrent requests to measure rate limiting, status distribution and latency percentiles.", feat:["429 detect","p95 latency","burst"] },
+  { id:"email-permutator", name:"Email Permutator", icon:"📧", cat:"Recon", desc:"Generate likely corporate email address formats from a name and domain for OSINT.", feat:["name formats","OSINT","copy"] },
+  { id:"json-tools",     name:"JSON Tools",        icon:"🧾", cat:"Crypto", desc:"Format, minify, validate and escape/unescape JSON with precise error locations.", feat:["format","validate","escape"] },
+  { id:"shodan-query",   name:"Shodan / Censys Query", icon:"🔭", cat:"Recon", desc:"Build Shodan and Censys search queries from a target with facet chips (port, org, product, cert).", feat:["shodan","censys","facets"] },
+  { id:"file-hasher",    name:"File Hasher",       icon:"#️⃣", cat:"Crypto", desc:"Compute SHA-1/256/512 of a picked file for integrity or IOC checks — fully offline.", feat:["SHA-1/256/512","offline","IOC"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -4026,6 +4032,126 @@ Impl["filetype-id"] = (root) => {
   root.append(
     UIKit.panel("File", null, file, el("div", { class: "hint" }, "read locally — first 32 bytes only")),
     UIKit.panel("Result", null, o.node));
+};
+
+/* ===================== RATE / LOAD TESTER ===================== */
+Impl["rate-tester"] = (root) => {
+  const url = UIKit.field("URL", { placeholder: "https://api.your-site.com/endpoint", value: "https://", mono: true });
+  const count = UIKit.field("Requests", { type: "number", value: "50", min: "1", max: "500" });
+  const conc = UIKit.field("Concurrency", { type: "number", value: "10", min: "1", max: "50" });
+  const bar = el("i", {}); const prog = el("div", { class: "bar" }, bar);
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear(); bar.style.width = "0";
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    const n = clamp(+count.input.value || 50, 1, 500);
+    const times = [], status = {};
+    const pool = makePool();
+    await pool.run(Array.from({ length: n }, (_, i) => i), clamp(+conc.input.value || 10, 1, 50), async () => {
+      const t0 = performance.now();
+      try { const r = await Net.fetchURL(u); status[r.status] = (status[r.status] || 0) + 1; }
+      catch { status["err"] = (status["err"] || 0) + 1; }
+      times.push(performance.now() - t0);
+    }, (d) => bar.style.width = (d / n * 100) + "%");
+    times.sort((a, b) => a - b);
+    const pct = q => times.length ? times[Math.min(times.length - 1, Math.floor(q * times.length))] : 0;
+    o.line("STATUS DISTRIBUTION", "k");
+    Object.entries(status).sort().forEach(([s, c]) => o.line("  " + s + " × " + c, s === "429" ? "err" : s.startsWith("2") ? "ok" : "warn"));
+    if (status["429"]) o.line("⚠ rate limiting active (429s seen)", "warn"); else o.line("no 429s — endpoint may be unthrottled", "dim");
+    o.line(""); o.line("LATENCY (ms)", "k");
+    o.line("  min " + (times[0] || 0).toFixed(0) + " · avg " + (times.reduce((a, b) => a + b, 0) / (times.length || 1)).toFixed(0) + " · p95 " + pct(.95).toFixed(0) + " · max " + (times[times.length - 1] || 0).toFixed(0), "v");
+    History.add("Rate Tester", u + " · " + n + " reqs");
+  };
+  root.append(
+    UIKit.panel("Config", null, url.wrap, el("div", { class: "toolbar" }, count.wrap, conc.wrap), el("div", { class: "row" }, UIKit.btn("Run burst", run, "primary"), el("span", { class: "hint" }, "test only systems you own — bursts can trip alerts")), prog),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== EMAIL PERMUTATOR ===================== */
+Impl["email-permutator"] = (root) => {
+  const first = UIKit.field("First name", { placeholder: "jane" });
+  const last = UIKit.field("Last name", { placeholder: "doe" });
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const o = UIKit.out();
+  const gen = () => {
+    const f = first.input.value.trim().toLowerCase(), l = last.input.value.trim().toLowerCase(), d = dom.input.value.trim().toLowerCase();
+    if (!f || !d) return o.set("enter at least first name + domain");
+    const fi = f[0], li = (l || " ")[0];
+    const locals = [f, l, f + l, f + "." + l, fi + l, fi + "." + l, f + li, f + "." + li, f + "_" + l, f + "-" + l, l + f, l + "." + f, l + fi, fi + li, f + li, li + f].filter(Boolean);
+    o.set([...new Set(locals)].map(x => x.replace(/\s+/g, "") + "@" + d).join("\n"));
+  };
+  [first, last, dom].forEach(x => x.input.addEventListener("input", gen)); gen();
+  root.append(
+    UIKit.panel("Identity", null, el("div", { class: "toolbar" }, first.wrap, last.wrap, dom.wrap)),
+    UIKit.panel("Candidate addresses", UIKit.copyBtn(() => o.node.textContent), o.node));
+};
+
+/* ===================== JSON TOOLS ===================== */
+Impl["json-tools"] = (root) => {
+  const io = UIKit.area("JSON", { value: '{"hello":"world","n":[1,2,3]}' });
+  const o = UIKit.out();
+  const parse = () => JSON.parse(io.input.value);
+  const guard = fn => { try { fn(); } catch (e) { const pos = (e.message.match(/position (\d+)/) || [])[1]; o.set("✗ invalid JSON: " + e.message + (pos ? "\n…near: " + io.input.value.slice(Math.max(0, pos - 20), +pos + 20) : "")); } };
+  root.append(
+    UIKit.panel("Input", null, io.wrap, el("div", { class: "row" },
+      UIKit.btn("Format", () => guard(() => o.set(JSON.stringify(parse(), null, 2))), "primary"),
+      UIKit.btn("Minify", () => guard(() => o.set(JSON.stringify(parse())))),
+      UIKit.btn("Validate", () => guard(() => { parse(); o.set("✓ valid JSON"); })),
+      UIKit.btn("Escape", () => o.set(JSON.stringify(io.input.value))),
+      UIKit.btn("Unescape", () => guard(() => o.set(JSON.parse(io.input.value)))))),
+    UIKit.panel("Output", UIKit.copyBtn(() => o.node.textContent), o.node));
+};
+
+/* ===================== SHODAN / CENSYS QUERY BUILDER ===================== */
+Impl["shodan-query"] = (root) => {
+  const dom = UIKit.field("Domain / keyword", { placeholder: "example.com", mono: true });
+  const facets = {}; const FAC = [["hostname", "hostname"], ["ssl.cert.subject.cn", "SSL CN"], ["http.title", "HTTP title"], ["org", "org"], ["product", "product"], ["port:443", "port 443"], ["port:22", "port 22"], ["http.favicon.hash", "favicon hash"], ["vuln", "has vuln"]];
+  const chips = el("div", { class: "chips" }); const o = UIKit.out();
+  FAC.forEach(([k, lbl]) => { const c = el("div", { class: "chip", onclick: () => { facets[k] = !facets[k]; c.classList.toggle("on"); build(); } }, lbl); chips.appendChild(c); });
+  const build = () => {
+    const d = dom.input.value.trim() || "example.com";
+    const sh = [], ce = [];
+    if (facets["hostname"]) { sh.push("hostname:" + d); ce.push("dns.names:" + d); }
+    if (facets["ssl.cert.subject.cn"]) { sh.push("ssl.cert.subject.cn:" + d); ce.push("services.tls.certificates.leaf_data.subject.common_name:" + d); }
+    if (facets["http.title"]) sh.push('http.title:"' + d + '"');
+    if (facets["org"]) { sh.push('org:"' + d + '"'); ce.push("autonomous_system.name:" + d); }
+    if (facets["product"]) sh.push('product:"' + d + '"');
+    if (facets["port:443"]) { sh.push("port:443"); ce.push("services.port:443"); }
+    if (facets["port:22"]) { sh.push("port:22"); ce.push("services.port:22"); }
+    if (facets["http.favicon.hash"]) sh.push("http.favicon.hash:<from-favicon-tool>");
+    if (facets["vuln"]) sh.push("vuln:*");
+    if (!sh.length) sh.push("hostname:" + d), ce.push("dns.names:" + d);
+    const shq = sh.join(" "), ceq = ce.join(" and ") || ("dns.names:" + d);
+    o.clear();
+    o.line("SHODAN", "k"); o.line(shq, "v");
+    o.node.appendChild(el("a", { href: "https://www.shodan.io/search?query=" + encodeURIComponent(shq), target: "_blank" }, "→ open in Shodan")); o.node.appendChild(document.createTextNode("\n\n"));
+    o.line("CENSYS", "k"); o.line(ceq, "v");
+    o.node.appendChild(el("a", { href: "https://search.censys.io/search?resource=hosts&q=" + encodeURIComponent(ceq), target: "_blank" }, "→ open in Censys"));
+  };
+  dom.input.addEventListener("input", build); build();
+  root.append(
+    UIKit.panel("Target", null, dom.wrap, el("div", { class: "fld" }, el("label", {}, "Facets"), chips)),
+    UIKit.panel("Queries", UIKit.copyBtn(() => o.node.textContent), o.node));
+};
+
+/* ===================== FILE HASHER ===================== */
+Impl["file-hasher"] = (root) => {
+  const o = UIKit.out(); o.set("pick a file to hash (SHA-1/256/512)");
+  const file = el("input", { type: "file", style: "padding:8px" });
+  file.addEventListener("change", () => {
+    const f = file.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = async () => {
+      o.clear(); o.line("file: " + f.name + " (" + f.size + " bytes)", "dim"); o.line("hashing…", "dim");
+      const buf = r.result;
+      for (const a of ["SHA-1", "SHA-256", "SHA-512"]) { try { const h = Bytes.toHex(await crypto.subtle.digest(a, buf)); o.line(a.padEnd(8) + " " + h, "v"); } catch (e) { o.line(a + " error", "err"); } }
+    };
+    r.readAsArrayBuffer(f);
+  });
+  root.append(
+    UIKit.panel("File", null, file, el("div", { class: "hint" }, "computed locally — nothing is uploaded")),
+    UIKit.panel("Digests", UIKit.copyBtn(() => o.node.textContent), o.node));
 };
 
 /* ===================== HISTORY (shared) ===================== */
