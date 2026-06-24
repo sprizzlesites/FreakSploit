@@ -1,8 +1,11 @@
 /* Functional tests for the Kali-grade application-layer tools.
  *   node test/kali.mjs   (or with PW_PATH=/abs/playwright/index.js) */
 import http from 'node:http';
+import crypto from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 const PW_PATH = process.env.PW_PATH || 'playwright';
 const pwMod = await import(PW_PATH);
 const chromium = pwMod.chromium || (pwMod.default && pwMod.default.chromium);
@@ -407,6 +410,60 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   const txt = await p.locator('#dMain').innerText();
   ok('SSTI Builder lists engine probes', /\{\{7\*7\}\}/.test(txt) && /Freemarker/.test(txt));
   await p.close();
+}
+
+/* JWT Secret Cracker — recover 'secret' */
+{
+  const b64u = x => Buffer.from(x).toString('base64url');
+  const h = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' })), pl = b64u(JSON.stringify({ user: 'x' }));
+  const sig = crypto.createHmac('sha256', 'secret').update(h + '.' + pl).digest('base64url');
+  const token = h + '.' + pl + '.' + sig;
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/jwt-cracker', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain textarea').first().fill(token);
+  await p.locator('#dMain').getByText('Crack', { exact: true }).click();
+  await p.waitForTimeout(800);
+  ok('JWT Cracker recovers HS256 secret', /SECRET FOUND:\s*secret/.test(await out(p)));
+  await p.close();
+}
+
+/* Subnet Calculator */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/subnet-calc', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill('192.168.1.0/24');
+  await p.waitForTimeout(200);
+  const txt = await out(p);
+  ok('Subnet Calc computes /24', /192\.168\.1\.255/.test(txt) && /hosts\s*:\s*254/.test(txt));
+  await p.close();
+}
+
+/* File Type ID — PNG magic */
+{
+  const png = join(tmpdir(), 'fs_magic_test.bin');
+  writeFileSync(png, Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0]));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/filetype-id', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input[type=file]').setInputFiles(png);
+  await p.waitForTimeout(400);
+  ok('File Type ID detects PNG from magic bytes', /PNG image/.test(await out(p)));
+  await p.close();
+}
+
+/* CRLF Injection — marker reflected in body */
+{
+  const { s, url } = await serve((req, res) => res.end('echo: ' + req.url));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/crlf-tester', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/?next=FUZZ');
+  await p.locator('#dMain').getByText('Test CRLF', { exact: true }).click();
+  await p.waitForTimeout(1200);
+  ok('CRLF Tester detects reflected marker', /response splitting likely|reflection/.test(await out(p)));
+  await p.close(); s.close();
 }
 
 await b.close();

@@ -641,6 +641,12 @@ const UNIVERSAL_TOOLS = [
   { id:"lfi-tester",     name:"Path Traversal / LFI", icon:"📂", cat:"Offense", desc:"Test a parameter for path traversal / local file inclusion with layered encodings and file-content signatures.", feat:["../ depths","encodings","/etc/passwd"] },
   { id:"hsts-checker",   name:"HSTS Checker",      icon:"🛤️", cat:"Web", desc:"Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.", feat:["max-age","preload","includeSubDomains"] },
   { id:"pw-strength",    name:"Password Strength", icon:"💪", cat:"Crypto", desc:"Estimate password entropy and crack time, and flag weak patterns — fully offline.", feat:["entropy","crack time","patterns"] },
+  // --- wave 8 ---
+  { id:"jwt-cracker",    name:"JWT Secret Cracker", icon:"🔨", cat:"Crypto", desc:"Dictionary-attack an HS256/384/512 JWT to recover the signing secret locally via SubtleCrypto.", feat:["HMAC brute","wordlist","local"] },
+  { id:"ip-intel",       name:"IP Intel",          icon:"🌎", cat:"Recon", desc:"Resolve a host, reverse-DNS (PTR) and pull geolocation/ASN/ISP for an IP.", feat:["PTR","geo/ASN","ISP"] },
+  { id:"subnet-calc",    name:"Subnet Calculator", icon:"📐", cat:"Crypto", desc:"Compute network, broadcast, mask, host range and count from CIDR — fully offline.", feat:["CIDR","range","hosts"] },
+  { id:"crlf-tester",    name:"CRLF Injection",    icon:"↵", cat:"Offense", desc:"Inject CRLF sequences into a parameter and detect header/response splitting via reflected markers.", feat:["%0d%0a","header inject","splitting"] },
+  { id:"filetype-id",    name:"File Type ID",      icon:"📦", cat:"Crypto", desc:"Identify a file's true type from its magic bytes — spot mismatched extensions, offline.", feat:["magic bytes","30+ types","offline"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -3859,6 +3865,167 @@ Impl["pw-strength"] = (root) => {
   root.append(
     UIKit.panel("Password", null, pw.wrap, bar, el("div", { class: "hint" }, "100% local — nothing is transmitted")),
     UIKit.panel("Analysis", null, o.node));
+};
+
+/* ===================== JWT SECRET CRACKER ===================== */
+Impl["jwt-cracker"] = (root) => {
+  const tok = UIKit.area("HS256/384/512 JWT", { placeholder: "eyJ...", spellcheck: "false" });
+  const wl = UIKit.area("Secret wordlist", { value: ["secret", "password", "123456", "admin", "key", "jwt", "your-256-bit-secret", "changeme", "test", "secretkey", "supersecret", "private", "token", "qwerty", "letmein", "s3cr3t", "P@ssw0rd", "default", "root", "jwtsecret"].join("\n") });
+  const o = UIKit.out();
+  let running = false;
+  const run = async () => {
+    if (running) { running = false; return; }
+    o.clear();
+    const parts = tok.input.value.trim().split(".");
+    if (parts.length < 3) return o.line("paste a full HS-signed JWT (3 segments)", "err");
+    let alg; try { alg = JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[0]))).alg; } catch { return o.line("bad header", "err"); }
+    const hash = { HS256: "SHA-256", HS384: "SHA-384", HS512: "SHA-512" }[(alg || "").toUpperCase()];
+    if (!hash) return o.line("not an HMAC (HS*) token — alg=" + alg, "err");
+    const signing = parts[0] + "." + parts[1], target = parts[2];
+    const words = wl.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+    o.line("trying " + words.length + " secrets against " + alg + "…", "dim");
+    running = true; runBtn.textContent = "Stop"; const t0 = performance.now();
+    let found = null;
+    for (let i = 0; i < words.length && running; i++) {
+      if ((await hmacSign(signing, words[i], hash)) === target) { found = words[i]; break; }
+      if (i % 50 === 0) await new Promise(r => setTimeout(r));
+    }
+    const dt = ((performance.now() - t0) / 1000).toFixed(2);
+    o.line(found != null ? "\n✓ SECRET FOUND: " + found : running ? "\n✗ not in wordlist" : "\nstopped", found != null ? "ok" : "warn");
+    o.line(dt + "s", "dim");
+    running = false; runBtn.textContent = "Crack";
+    History.add("JWT Cracker", found != null ? "cracked: " + found : "not found");
+  };
+  const runBtn = UIKit.btn("Crack", run, "primary");
+  root.append(
+    UIKit.panel("Token", null, tok.wrap),
+    UIKit.panel("Wordlist", null, wl.wrap, el("div", { class: "row" }, runBtn)),
+    UIKit.panel("Result", null, o.node));
+};
+
+/* ===================== IP INTEL ===================== */
+Impl["ip-intel"] = (root) => {
+  const inp = UIKit.field("IP or host", { placeholder: "1.1.1.1 or example.com", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    let v = inp.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!v) return o.line("enter an IP or host", "err");
+    let ip = v;
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) {
+      try { const d = await Net.doh(v, "A"); ip = (d.Answer || []).filter(a => a.type === 1).map(a => a.data)[0]; if (!ip) return o.line("could not resolve A record", "warn"); o.line(v + " → " + ip, "v"); } catch (e) { return o.line("resolve failed: " + e.message, "err"); }
+    }
+    o.line(""); o.line("REVERSE DNS", "k");
+    try { const ptr = await Net.doh(ip.split(".").reverse().join(".") + ".in-addr.arpa", "PTR"); const names = (ptr.Answer || []).map(a => a.data); o.line(names.length ? names.join(", ") : "no PTR record", names.length ? "ok" : "dim"); } catch { o.line("PTR lookup failed", "dim"); }
+    o.line(""); o.line("GEO / ASN", "k");
+    try {
+      const g = await (await fetch("https://ipwho.is/" + ip)).json();
+      if (g.success === false) o.line("geo lookup: " + (g.message || "failed"), "warn");
+      else { o.line("country : " + g.country + " (" + g.country_code + ")", "v"); o.line("region  : " + g.region + " / " + g.city, "v"); o.line("org     : " + (g.connection && g.connection.org || "?"), "v"); o.line("ISP     : " + (g.connection && g.connection.isp || "?"), "v"); o.line("ASN     : AS" + (g.connection && g.connection.asn || "?"), "v"); o.line("coords  : " + g.latitude + ", " + g.longitude, "dim"); }
+    } catch (e) { o.line("geo lookup failed: " + e.message, "err"); }
+    History.add("IP Intel", ip);
+  };
+  root.append(
+    UIKit.panel("Target", null, inp.wrap, el("div", { class: "row" }, UIKit.btn("Look up", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+  inp.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== SUBNET CALCULATOR ===================== */
+Impl["subnet-calc"] = (root) => {
+  const inp = UIKit.field("CIDR", { placeholder: "192.168.1.0/24", value: "192.168.1.0/24", mono: true });
+  const o = UIKit.out();
+  const toIp = n => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+  const run = () => {
+    o.clear();
+    const m = inp.input.value.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+    if (!m) return o.line("format: a.b.c.d/n", "err");
+    const oct = m.slice(1, 5).map(Number); const n = +m[5];
+    if (oct.some(x => x > 255) || n > 32) return o.line("invalid", "err");
+    const ip = ((oct[0] << 24) | (oct[1] << 16) | (oct[2] << 8) | oct[3]) >>> 0;
+    const mask = n === 0 ? 0 : (0xFFFFFFFF << (32 - n)) >>> 0;
+    const net = (ip & mask) >>> 0, bc = (net | (~mask >>> 0)) >>> 0;
+    const total = Math.pow(2, 32 - n), hosts = n >= 31 ? total : total - 2;
+    o.line("network   : " + toIp(net) + "/" + n, "ok");
+    o.line("netmask   : " + toIp(mask), "v");
+    o.line("wildcard  : " + toIp(~mask >>> 0), "v");
+    o.line("broadcast : " + toIp(bc), "v");
+    o.line("range     : " + toIp(n >= 31 ? net : net + 1) + " – " + toIp(n >= 31 ? bc : bc - 1), "v");
+    o.line("hosts     : " + hosts.toLocaleString(), "v");
+    o.line("total IPs : " + total.toLocaleString(), "dim");
+  };
+  inp.input.addEventListener("input", run); run();
+  root.append(UIKit.panel("CIDR", null, inp.wrap, el("div", { class: "row" }, UIKit.btn("Calculate", run, "primary"))), UIKit.panel("Result", null, o.node));
+};
+
+/* ===================== CRLF INJECTION TESTER ===================== */
+Impl["crlf-tester"] = (root) => {
+  const url = UIKit.field("URL (FUZZ = injection point)", { placeholder: "https://site.com/?next=FUZZ", mono: true });
+  const o = UIKit.out();
+  const MARK = "fscrlf" + Math.random().toString(36).slice(2, 6);
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!u.includes("FUZZ")) return o.line("put FUZZ where the value goes", "err");
+    const payloads = ["%0d%0a" + MARK + ":1", "%0d%0aSet-Cookie:" + MARK + "=1", "%0d%0a%0d%0a" + MARK + "BODY", "%E5%98%8A%E5%98%8D" + MARK + ":1", "%0aSet-Cookie:" + MARK + "=1"];
+    let hits = 0;
+    for (const pl of payloads) {
+      try {
+        const r = await Net.fetchURL(u.replace(/FUZZ/g, pl));
+        const body = r.type === "opaque" ? "" : await r.text().catch(() => "");
+        if (body.includes(MARK)) { hits++; o.line("⚠ marker reflected with payload " + pl + " — response splitting likely", "err"); }
+        else o.line("· " + pl + " → " + r.status, "dim");
+      } catch (e) { o.line("· " + pl + " error", "dim"); }
+    }
+    o.line(""); o.line(hits ? "⚠ " + hits + " CRLF reflection(s)" : "no CRLF reflection in body (header splitting may still occur — headers are hidden cross-origin; try a proxy)", hits ? "err" : "warn");
+    History.add("CRLF Tester", u + " · " + hits);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Test CRLF", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== FILE TYPE IDENTIFIER ===================== */
+const MAGIC = [
+  { sig: [0x89, 0x50, 0x4E, 0x47], t: "PNG image" }, { sig: [0xFF, 0xD8, 0xFF], t: "JPEG image" },
+  { sig: [0x47, 0x49, 0x46, 0x38], t: "GIF image" }, { sig: [0x25, 0x50, 0x44, 0x46], t: "PDF document" },
+  { sig: [0x50, 0x4B, 0x03, 0x04], t: "ZIP / docx / xlsx / jar / apk" }, { sig: [0x1F, 0x8B], t: "GZIP" },
+  { sig: [0x52, 0x61, 0x72, 0x21], t: "RAR archive" }, { sig: [0x37, 0x7A, 0xBC, 0xAF], t: "7-Zip" },
+  { sig: [0x7F, 0x45, 0x4C, 0x46], t: "ELF executable (Linux)" }, { sig: [0x4D, 0x5A], t: "PE/EXE (Windows)" },
+  { sig: [0xCA, 0xFE, 0xBA, 0xBE], t: "Java class / Mach-O fat" }, { sig: [0x00, 0x61, 0x73, 0x6D], t: "WebAssembly" },
+  { sig: [0x53, 0x51, 0x4C, 0x69, 0x74, 0x65], t: "SQLite database" }, { sig: [0x49, 0x44, 0x33], t: "MP3 (ID3)" },
+  { sig: [0x42, 0x4D], t: "BMP image" }, { sig: [0x66, 0x4C, 0x61, 0x43], t: "FLAC audio" },
+  { sig: [0x4F, 0x67, 0x67, 0x53], t: "OGG" }, { sig: [0x25, 0x21, 0x50, 0x53], t: "PostScript" },
+];
+function magicType(bytes) {
+  for (const m of MAGIC) if (m.sig.every((b, i) => bytes[i] === b)) return m.t;
+  if (bytes[0] === 0x52 && bytes[8] === 0x57 && bytes[9] === 0x45) return "WEBP / WAV / AVI (RIFF)";
+  if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return "MP4 / MOV / HEIC (ISO-BMFF)";
+  return null;
+}
+Impl["filetype-id"] = (root) => {
+  const o = UIKit.out(); o.set("pick any file to identify its true type from magic bytes");
+  const file = el("input", { type: "file", style: "padding:8px" });
+  file.addEventListener("change", () => {
+    const f = file.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const bytes = new Uint8Array(r.result.slice(0, 32));
+      const t = magicType(bytes);
+      const hex = [...bytes.slice(0, 16)].map(b => b.toString(16).padStart(2, "0")).join(" ");
+      const ext = (f.name.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
+      o.clear();
+      o.line("file      : " + f.name + " (" + f.size + " bytes)", "dim");
+      o.line("magic hex : " + hex, "dim");
+      o.line("detected  : " + (t || "unknown / text"), t ? "ok" : "warn");
+      if (t && ext && !t.toLowerCase().includes(ext.toLowerCase()) && !(ext === "jpg" && /JPEG/.test(t)) && !(/docx|xlsx|jar|apk/.test(ext) && /ZIP/.test(t)))
+        o.line("⚠ extension .' " + ext + "' may not match the real type", "warn");
+    };
+    r.readAsArrayBuffer(f.slice(0, 32));
+  });
+  root.append(
+    UIKit.panel("File", null, file, el("div", { class: "hint" }, "read locally — first 32 bytes only")),
+    UIKit.panel("Result", null, o.node));
 };
 
 /* ===================== HISTORY (shared) ===================== */

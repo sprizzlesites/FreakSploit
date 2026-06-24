@@ -159,6 +159,15 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 
 > Tool count: 60 universal (iOS+desktop) + 7 daemon-only = 67 tools.
 
+### Phase 2.13 — Kali wave 8 (universal) ✅
+- [x] JWT Secret Cracker (HS256/384/512 dictionary attack via SubtleCrypto)
+- [x] IP Intel (resolve + PTR + geo/ASN/ISP via ipwho.is)
+- [x] Subnet Calculator (CIDR → network/broadcast/range/hosts, offline)
+- [x] CRLF Injection Tester (response-splitting marker reflection)
+- [x] File Type ID (30+ magic-byte signatures, offline)
+
+> Tool count: 65 universal (iOS+desktop) + 7 daemon-only = 72 tools.
+
 ## Backlog / next up (when user says "continue")
 1. Still browser-feasible (next waves): S3/GCS/Azure bucket finder,
    Wayback/archive URL recon, XXE payload helper, SSTI polyglot builder,
