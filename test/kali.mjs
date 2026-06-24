@@ -313,6 +313,63 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close();
 }
 
+/* JWKS Inspector */
+{
+  const { s, url } = await serve((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [{ kty: 'RSA', kid: 'test-key-1', alg: 'RS256', use: 'sig', n: 'sXch1234567890abcdefABCDEF', e: 'AQAB' }] })); });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/jwks-inspector', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/jwks.json');
+  await p.locator('#dMain').getByText('Inspect', { exact: true }).click();
+  await p.waitForTimeout(800);
+  const txt = await out(p);
+  ok('JWKS Inspector lists kid + thumbprint', /test-key-1/.test(txt) && /thumbprint/.test(txt));
+  await p.close(); s.close();
+}
+
+/* SRI Checker */
+{
+  const { s, url } = await serve((req, res) => res.end('<html><head><script src="https://cdn.example.com/lib.js"><\/script><script src="/local.js"><\/script></head></html>'));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/sri-checker', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url);
+  await p.locator('#dMain').getByText('Check', { exact: true }).click();
+  await p.waitForTimeout(800);
+  const txt = await out(p);
+  ok('SRI Checker flags missing integrity on third-party', /no integrity/.test(txt) && /cdn\.example\.com/.test(txt));
+  await p.close(); s.close();
+}
+
+/* robots / security.txt parser */
+{
+  const { s, url } = await serve((req, res) => {
+    if (req.url === '/robots.txt') return res.end('User-agent: *\nDisallow: /admin\nDisallow: /secret-api\nSitemap: ' + url + '/sitemap.xml');
+    if (req.url === '/.well-known/security.txt') return res.end('Contact: mailto:security@target.test\nExpires: 2026-01-01T00:00:00Z');
+    if (req.url === '/sitemap.xml') return res.end('<urlset><url><loc>https://t/x</loc></url></urlset>');
+    res.statusCode = 404; res.end('x');
+  });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/txt-parser', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url);
+  await p.locator('#dMain').getByText('Fetch & parse', { exact: true }).click();
+  await p.waitForTimeout(1200);
+  const txt = await out(p);
+  ok('robots/security.txt surfaces disallow + contact', /\/admin/.test(txt) && /\/secret-api/.test(txt) && /security@target\.test/.test(txt));
+  await p.close(); s.close();
+}
+
+/* XXE Helper — payload generation */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/xxe-helper', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(400);
+  const txt = await p.locator('#dMain').innerText();
+  ok('XXE Helper generates file-read payload', /file:\/\/\/etc\/passwd/.test(txt) && /SYSTEM/.test(txt));
+  await p.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);

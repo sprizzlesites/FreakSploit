@@ -141,6 +141,14 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Dev Utilities (epoch/UUID/base/regex)
 - [x] Cache Poisoning Probe (unkeyed header reflection)
 
+### Phase 2.11 — Kali wave 6 (universal) ✅
+- [x] Cloud Bucket Finder (S3/GCS/Azure permutations, listable/private)
+- [x] Wayback Recon (CDX archived URL harvest, juicy-path filter)
+- [x] XXE Helper (file-read/SSRF/OOB/billion-laughs payloads + tester)
+- [x] JWKS Inspector (kid/alg/use + RFC7638 thumbprints)
+- [x] SRI Checker (missing Subresource Integrity on third-party)
+- [x] robots / security.txt Parser (disallow paths, contacts, sitemap)
+
 ## Backlog / next up (when user says "continue")
 1. Still browser-feasible (next waves): S3/GCS/Azure bucket finder,
    Wayback/archive URL recon, XXE payload helper, SSTI polyglot builder,
