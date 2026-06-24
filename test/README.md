@@ -11,6 +11,10 @@ PW_PATH=/path/to/node_modules/playwright/index.js node test/smoke.mjs
 # daemon: spins up a mock WebSocket daemon and drives the desktop tools,
 # asserting they render streamed scan/iface/packet/console data
 PW_PATH=/path/to/node_modules/playwright/index.js node test/daemon.mjs
+
+# offense: serves mock vulnerable endpoints and asserts the active tools
+# actually detect planted issues (leaked keys, SQL errors, SSTI eval)
+PW_PATH=/path/to/node_modules/playwright/index.js node test/offense.mjs
 ```
 
 Both exit non-zero on failure. The WebSocket connection-refused messages in
