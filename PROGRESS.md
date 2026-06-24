@@ -53,6 +53,20 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] OSINT Dashboard (crt.sh subdomains + DNS aggregation)
 - [x] Report Builder (findings → markdown/HTML, export, drafts in IndexedDB)
 
+### Phase 2.5 — Offense / active testing tools (universal: iOS + desktop)
+> Added per user request: serious mobile testing tools for common
+> vibe-coded bugs. All application-layer (browser-feasible); raw L2/L3
+> stays in the daemon tier. Route through the CORS proxy in Settings.
+- [x] Secret Scanner (HTML/JS/source-map key & env hunting)
+- [x] Request Forge (build/tamper/replay, cURL import, repeater)
+- [x] WebSocket Workbench (live sniff + inject + fuzz)
+- [x] Auth / Token Lab (JWT forge: alg:none, role→admin, resign + replay test)
+- [x] Param / Price Tamper (auto price/qty/role/id mutation + acceptance flag)
+- [x] Injection Tester (SQLi/NoSQLi/SSTI/cmd; error/time/reflection detection)
+- [ ] IDOR / Access probe (enumerate IDs, compare auth vs unauth) — backlog
+- [ ] CORS exploitability tester (reflected origin + credentials) — backlog
+- [ ] API/endpoint discovery (.env/.git/sourcemaps/swagger/GraphQL) — backlog
+
 ### Phase 3 — iOS section screens
 - [x] Library section → live Payload Library
 - [x] Reports section → live Report Builder
@@ -86,6 +100,12 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 
 ---
 
+## Backlog / next up (when user says "continue")
+1. Offense backlog: IDOR/Access probe, CORS exploit tester, API/endpoint
+   discovery (.env/.git/sourcemaps/swagger/GraphQL introspection).
+2. Optional standalone sw.js for full offline navigation.
+3. Command-palette actions (run/copy), not just navigation.
+
 ## Session log
 - **S1**: Foundation shell shipped (Phase 0). Committed.
 - **S1 (overnight)**: Phases 1–3 DONE. All 11 browser-native tools live
@@ -115,3 +135,10 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   pass. Every code path in the app is now covered by an automated test.
   **Everything in the spec is built and verified. Remaining = optional
   polish only (standalone sw.js, more History wiring, palette actions).**
+- **S2**: Added 6 Offense/active-testing tools per user request (more
+  serious mobile capabilities for vibe-coded bugs): Secret Scanner,
+  Request Forge, WebSocket Workbench, Auth/Token Lab, Param/Price Tamper,
+  Injection Tester. Shared HttpKit (send + cURL parser). iOS pager now 17
+  tools; 26 desktop routes; smoke test green; iOS still daemon-free.
+  Honest boundary: raw L2/L3 packet work isn't browser-possible, stays in
+  the daemon tier — these operate at the HTTP/WS layer via the CORS proxy.

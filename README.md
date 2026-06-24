@@ -27,6 +27,28 @@ Builder (mutations + IndexedDB), Payload Library (curated + custom), Hash
 Cracker (MD5/SHA dictionary + brute force), SSL/TLS Inspector (crt.sh + probe),
 OSINT Dashboard (crt.sh + DNS), Report Builder (markdown/HTML export).
 
+**Offense — active testing (desktop + iOS):** for finding common
+"vibe-coded" bugs in *your own* apps from any device, all at the
+HTTP/WebSocket layer (no native deps):
+- **Secret Scanner** — fetch HTML + JS bundles + source maps, hunt leaked
+  API keys / env vars / tokens (the #1 client-shipped-secrets mistake)
+- **Request Forge** — build/tamper/replay any HTTP request, import from cURL
+- **WebSocket Workbench** — live frame sniff + inject + fuzz (real, in-browser)
+- **Auth / Token Lab** — forge JWTs (alg:none, role→admin, resign) and replay
+  them against an endpoint to test signature/claim validation
+- **Param / Price Tamper** — auto-mutate price/qty/role/id and flag when the
+  server trusts client values (broken object-level authz / mass assignment)
+- **Injection Tester** — SQLi/NoSQLi/SSTI/cmd with error, time-based and
+  reflection detection
+
+> **Boundary:** raw L2/L3 packet capture/injection (pcap, ARP, monitor mode)
+> is impossible from a browser and lives in the desktop daemon tier. The iOS
+> Offense tools operate at the application layer — which is where most
+> vibe-coded vulnerabilities actually are. Cross-origin tools route through
+> the optional CORS proxy configured in Settings.
+
+> ⚠️ **Only test systems you own or are authorized to test.**
+
 **Daemon-connected (desktop only):** Network Scanner, Packet Analyzer, HTTP
 Interceptor, Interface Manager, Raw Packet Injector, Exploit Console, Remote
 Daemon Connector.

