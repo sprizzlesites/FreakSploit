@@ -11,7 +11,16 @@ const file = 'file://' + resolve(here, '..', 'index.html');
 
 let fails = 0;
 const ok = (name, cond, extra = '') => { console.log((cond ? 'PASS' : 'FAIL') + ' — ' + name + (extra ? ' :: ' + extra : '')); if (!cond) fails++; };
-const serve = (fn) => new Promise(r => { const s = http.createServer((req, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); fn(req, res); }); s.listen(0, () => r({ s, url: 'http://localhost:' + s.address().port })); });
+const serve = (fn) => new Promise(r => {
+  const s = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Allow-Methods', '*');
+    if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
+    fn(req, res);
+  });
+  s.listen(0, () => r({ s, url: 'http://localhost:' + s.address().port }));
+});
 const b = await chromium.launch();
 const out = (p) => p.locator('#dMain .out').first().innerText();
 
@@ -125,6 +134,48 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   const txt = await p.locator('#dMain').innerText();
   ok('Reverse Shell generates bash payload', /\/dev\/tcp\/10\.0\.0\.1\/4444/.test(txt));
   await p.close();
+}
+
+/* Web Spider */
+{
+  const { s, url } = await serve((req, res) => res.end(`<html><body>
+    <a href="/about">about</a><a href="/contact">contact</a>
+    <form action="/login" method="post"><input name="user"><input name="pass"></form>
+    <script src="/static/app.js"></script>
+    <script>fetch('/api/v1/users'); const e="admin@target.test";</script>
+  </body></html>`));
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/web-spider', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url);
+  await p.locator('#dMain').getByText('Spider', { exact: true }).click();
+  await p.waitForTimeout(1200);
+  const txt = await out(p);
+  ok('Web Spider extracts link/endpoint/email/form', /\/about/.test(txt) && /\/api\/v1\/users/.test(txt) && /admin@target\.test/.test(txt) && /\/login/.test(txt));
+  await p.close(); s.close();
+}
+
+/* GraphQL Lab */
+{
+  const { s, url } = await serve((req, res) => {
+    let body = ''; req.on('data', c => body += c); req.on('end', () => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ data: { __schema: { queryType: { name: 'Query' }, mutationType: { name: 'Mutation' }, types: [
+        { name: 'Query', kind: 'OBJECT', fields: [{ name: 'users' }, { name: 'posts' }] },
+        { name: 'Mutation', kind: 'OBJECT', fields: [{ name: 'login' }] },
+        { name: 'User', kind: 'OBJECT', fields: [{ name: 'id' }] },
+      ] } } }));
+    });
+  });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/graphql-lab', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/graphql');
+  await p.locator('#dMain').getByText('Introspect', { exact: true }).click();
+  await p.waitForTimeout(1000);
+  const txt = await out(p);
+  ok('GraphQL Lab introspection lists queries', /introspection ENABLED/.test(txt) && /users/.test(txt) && /login/.test(txt));
+  await p.close(); s.close();
 }
 
 await b.close();

@@ -113,12 +113,19 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
       sets .value; repairs all wordlist/dictionary defaults app-wide.
 - [x] test/kali.mjs — 9 functional assertions, all PASS
 
+### Phase 2.7 — Kali wave 2 (universal) ✅
+- [x] WAF Detector (cf/akamai/imperva/sucuri/aws/modsec signatures)
+- [x] Web Spider (links/forms/scripts/endpoints/emails, 1-hop crawl)
+- [x] GraphQL Lab (introspection + query runner)
+- [x] SSRF Probe (cloud-metadata/internal targets + OOB canary)
+
 ## Backlog / next up (when user says "continue")
-1. More Kali coverage still browser-feasible: SSRF probe (canary/webhook),
-   GraphQL Lab (introspection browser + query runner), WAF detector
-   (wafw00f), Web Spider/crawler, EXIF/metadata viewer, Google-dork
-   generator, JWT alg-confusion (RS256→HS256) + kid/jku injection,
-   prototype-pollution probe, XXE/SSRF helper.
+1. More Kali coverage still browser-feasible: EXIF/metadata viewer,
+   Google-dork generator, JWT alg-confusion (RS256→HS256) + kid/jku,
+   prototype-pollution probe, WebRTC local-IP leak, email SPF/DMARC/DKIM
+   checker (DoH TXT), WordPress user-enum scanner, 403-bypass tester,
+   HTTP verb/methods tester, CSP auditor, cookie-security analyzer,
+   S3/cloud-bucket finder, favicon-hash, typosquat generator.
 2. NOT feasible in-browser (document as such): HTTP request smuggling
    (can't control TE/CL via fetch), raw nmap/masscan, ARP/L2.
 3. Optional standalone sw.js for full offline navigation.
