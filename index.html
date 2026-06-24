@@ -1389,6 +1389,94 @@ Impl["hash-cracker"] = (root) => {
     UIKit.panel("Result", null, o.node));
 };
 
+/* shared: certificate transparency lookup via crt.sh */
+async function crtsh(query) {
+  const url = "https://crt.sh/?q=" + encodeURIComponent(query) + "&output=json";
+  const r = await Net.fetchURL(url, { headers: { accept: "application/json" } });
+  if (!r.ok) throw new Error("crt.sh HTTP " + r.status);
+  const txt = await r.text();
+  try { return JSON.parse(txt); } catch { return JSON.parse("[" + txt.trim().replace(/}\s*{/g, "},{") + "]"); }
+}
+
+/* ===================== SSL / TLS INSPECTOR ===================== */
+Impl["ssl-inspector"] = (root) => {
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const host = dom.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!host) return o.line("Enter a domain", "err");
+
+    o.line("TLS REACHABILITY", "k");
+    const t0 = performance.now();
+    try { await fetch("https://" + host, { mode: "no-cors" }); o.line("✓ https://" + host + " reachable (" + Math.round(performance.now() - t0) + "ms)", "ok"); }
+    catch (e) { o.line("✗ TLS connect failed: " + e.message, "err"); }
+
+    o.line(""); o.line("SECURITY HEADERS (best-effort, CORS-permitting)", "k");
+    try {
+      const r = await Net.fetchURL("https://" + host, { method: "GET" });
+      const hsts = r.headers.get("strict-transport-security");
+      o.line(hsts ? "✓ HSTS: " + hsts : "✗ no HSTS header visible", hsts ? "ok" : "warn");
+    } catch { o.line("headers not readable (CORS) — set a proxy in Settings for full read", "dim"); }
+
+    o.line(""); o.line("CERTIFICATE TRANSPARENCY (crt.sh)", "k");
+    try {
+      const certs = await crtsh(host);
+      if (!certs.length) { o.line("no CT entries found", "dim"); return; }
+      const recent = certs.sort((a, b) => new Date(b.not_before) - new Date(a.not_before)).slice(0, 6);
+      const latest = recent[0];
+      const daysLeft = Math.round((new Date(latest.not_after) - Date.now()) / 864e5);
+      o.line("latest issuer : " + (latest.issuer_name || "?").replace(/\n/g, " "), "v");
+      o.line("valid         : " + latest.not_before + " → " + latest.not_after, "v");
+      o.line("expires in    : " + daysLeft + " days", daysLeft < 14 ? "err" : daysLeft < 30 ? "warn" : "ok");
+      o.line("");
+      o.line("recent certificates:", "dim");
+      recent.forEach(c => o.line("  • " + (c.name_value || "").split("\n")[0] + "  [" + c.not_before.slice(0, 10) + "]", "dim"));
+    } catch (e) { o.line("crt.sh error: " + e.message + " (may need a CORS proxy)", "err"); }
+    o.line(""); o.line("ℹ full handshake/cipher/chain inspection requires the desktop daemon", "dim");
+  };
+  root.append(
+    UIKit.panel("Target", null, dom.wrap, el("div", { class: "row" }, UIKit.btn("Inspect", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+  dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== OSINT DASHBOARD ===================== */
+Impl["osint"] = (root) => {
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const grid = el("div", { class: "grid" });
+  function card(title) { const b = el("div", { class: "out", style: "max-height:240px" }); grid.appendChild(el("div", { class: "panel" }, el("div", { class: "p-head" }, title), el("div", { class: "p-body" }, b))); return UIKitOut(b); }
+  function UIKitOut(node) { return { node, line(t, c) { node.appendChild(el("span", c ? { class: c } : {}, t + "\n")); }, set(t) { node.textContent = t; } }; }
+  const run = async () => {
+    grid.innerHTML = "";
+    const host = dom.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!host) return Toast.show("Enter a domain", "err");
+    const dns = card("DNS records");
+    const subs = card("Subdomains (crt.sh)");
+    const certs = card("Certificates");
+    // DNS
+    for (const t of ["A", "AAAA", "MX", "NS", "TXT"]) {
+      try { const d = await Net.doh(host, t); const ans = (d.Answer || []).map(a => a.data); dns.line(t.padEnd(5) + " " + (ans.length ? ans.join(", ") : "—"), ans.length ? "v" : "dim"); }
+      catch { dns.line(t.padEnd(5) + " error", "err"); }
+    }
+    // crt.sh subdomains + certs
+    try {
+      const data = await crtsh("%." + host);
+      const names = new Set();
+      data.forEach(c => (c.name_value || "").split("\n").forEach(n => names.add(n.trim().toLowerCase())));
+      const sorted = [...names].filter(Boolean).sort();
+      subs.set(sorted.slice(0, 200).join("\n") || "none");
+      subs.line("\n" + sorted.length + " unique names", "ok");
+      const recent = data.sort((a, b) => new Date(b.not_before) - new Date(a.not_before)).slice(0, 8);
+      recent.forEach(c => certs.line((c.issuer_name || "?").replace(/\n/g, " ").slice(0, 60) + "  [" + c.not_before.slice(0, 10) + "]", "dim"));
+    } catch (e) { subs.line("crt.sh error: " + e.message + " (CORS proxy may help)", "err"); }
+  };
+  root.append(
+    UIKit.panel("Passive recon", null, dom.wrap, el("div", { class: "row" }, UIKit.btn("Gather", run, "primary"), el("span", { class: "hint" }, "passive sources only — no direct contact with the target")),
+    ), el("div", {}, grid));
+  dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
 /* --------------------------------------------------------------------- *
  *  Shared tool-view renderer (used by desktop main + reused content)
  * --------------------------------------------------------------------- */
