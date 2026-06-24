@@ -149,6 +149,16 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] SRI Checker (missing Subresource Integrity on third-party)
 - [x] robots / security.txt Parser (disallow paths, contacts, sitemap)
 
+### Phase 2.12 — Kali wave 7 (universal) ✅
+- [x] Subdomain Takeover (CNAME + dangling-service fingerprints)
+- [x] Pwned Password (HIBP k-anonymity, password never sent)
+- [x] SSTI Builder (per-engine probes + polyglot)
+- [x] Path Traversal / LFI Tester (encodings + file-content signatures)
+- [x] HSTS Checker (max-age/includeSubDomains/preload eligibility)
+- [x] Password Strength (offline entropy + crack-time + patterns)
+
+> Tool count: 60 universal (iOS+desktop) + 7 daemon-only = 67 tools.
+
 ## Backlog / next up (when user says "continue")
 1. Still browser-feasible (next waves): S3/GCS/Azure bucket finder,
    Wayback/archive URL recon, XXE payload helper, SSTI polyglot builder,

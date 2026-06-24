@@ -370,6 +370,45 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close();
 }
 
+/* Path Traversal / LFI */
+{
+  const { s, url } = await serve((req, res) => { const f = new URL(req.url, 'http://x').searchParams.get('file') || ''; if (/etc\/passwd/.test(f)) res.end('root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:'); else res.end('normal page'); });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/lfi-tester', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/?file=FUZZ');
+  await p.locator('#dMain').getByText('Test traversal', { exact: true }).click();
+  await p.waitForTimeout(1500);
+  const res = await p.locator('#dMain table.tbl tbody tr td:last-child').allInnerTexts();
+  ok('LFI Tester detects /etc/passwd content', res.some(r => /file content leaked/.test(r)));
+  await p.close(); s.close();
+}
+
+/* Password Strength */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/pw-strength', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill('password');
+  await p.waitForTimeout(200);
+  const weak = await out(p);
+  await p.locator('#dMain input').first().fill('Tr0ub4dour&3xtra-Long-PHRASE!');
+  await p.waitForTimeout(200);
+  const strong = await out(p);
+  ok('Password Strength rates weak vs strong', /WEAK/.test(weak) && /common/.test(weak) && /STRONG/.test(strong));
+  await p.close();
+}
+
+/* SSTI Builder */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/ssti-builder', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  const txt = await p.locator('#dMain').innerText();
+  ok('SSTI Builder lists engine probes', /\{\{7\*7\}\}/.test(txt) && /Freemarker/.test(txt));
+  await p.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);
