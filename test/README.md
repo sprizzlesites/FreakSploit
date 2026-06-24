@@ -15,6 +15,10 @@ PW_PATH=/path/to/node_modules/playwright/index.js node test/daemon.mjs
 # offense: serves mock vulnerable endpoints and asserts the active tools
 # actually detect planted issues (leaked keys, SQL errors, SSTI eval)
 PW_PATH=/path/to/node_modules/playwright/index.js node test/offense.mjs
+
+# kali: verifies the Kali-grade tools (Crypto Lab, Content Discovery, Tech
+# Fingerprint, Param Miner, Open Redirect, Clickjacking, CSRF, revshell)
+PW_PATH=/path/to/node_modules/playwright/index.js node test/kali.mjs
 ```
 
 Both exit non-zero on failure. The WebSocket connection-refused messages in

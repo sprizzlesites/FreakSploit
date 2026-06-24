@@ -100,12 +100,30 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 
 ---
 
+### Phase 2.6 — Kali-grade application-layer toolset (universal) ✅
+- [x] Crypto Lab (encode/decode, hash, HMAC, AES-GCM, hash-id, entropy)
+- [x] Content Discovery (gobuster/ffuf dir+file brute, soft-404)
+- [x] Tech Fingerprint (Wappalyzer-style stack detection)
+- [x] Param Miner (Arjun-style hidden param discovery)
+- [x] Open Redirect Scanner
+- [x] Clickjacking Tester (headers + live iframe PoC)
+- [x] CSRF PoC Builder (auto-submit form / fetch PoC)
+- [x] Reverse Shell Generator (multi-language + encoding)
+- [x] FIX: UIKit.area set value via attribute (ignored by textarea) — now
+      sets .value; repairs all wordlist/dictionary defaults app-wide.
+- [x] test/kali.mjs — 9 functional assertions, all PASS
+
 ## Backlog / next up (when user says "continue")
-1. Optional standalone sw.js for full offline navigation.
-2. Command-palette actions (run/copy), not just navigation.
-3. iOS: surface History/recent runs per tool inside the swipe cards.
-4. Possible deeper tools: request smuggling probe, JWT kid/jku injection,
-   prototype-pollution probe, open-redirect scanner.
+1. More Kali coverage still browser-feasible: SSRF probe (canary/webhook),
+   GraphQL Lab (introspection browser + query runner), WAF detector
+   (wafw00f), Web Spider/crawler, EXIF/metadata viewer, Google-dork
+   generator, JWT alg-confusion (RS256→HS256) + kid/jku injection,
+   prototype-pollution probe, XXE/SSRF helper.
+2. NOT feasible in-browser (document as such): HTTP request smuggling
+   (can't control TE/CL via fetch), raw nmap/masscan, ARP/L2.
+3. Optional standalone sw.js for full offline navigation.
+4. Command-palette actions (run/copy), not just navigation.
+5. iOS: surface History/recent runs per tool inside the swipe cards.
 
 ## Session log
 - **S1**: Foundation shell shipped (Phase 0). Committed.
@@ -149,3 +167,11 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   bypassing the proxy), API/Endpoint Discovery (.env/.git/swagger/GraphQL
   introspection). iOS pager now 20 tools; 29 desktop routes; smoke green.
   Extended test/offense.mjs with 3 functional scenarios — all 5 PASS.
+- **S3**: Kali-grade batch — Crypto Lab, Content Discovery, Tech
+  Fingerprint, Param Miner, Open Redirect, Clickjacking, CSRF PoC Builder,
+  Reverse Shell Generator (8 tools). iOS pager now 28 tools; 37 desktop
+  routes; all 4 test suites green (new test/kali.mjs = 9 assertions).
+  Caught + fixed a real bug: UIKit.area textarea defaults never applied
+  (value attribute is ignored by <textarea>) — fix restores wordlist/
+  dictionary defaults across Wordlist Builder, Hash Cracker, Subdomain
+  Enum, Content Discovery and Param Miner.

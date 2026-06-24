@@ -47,6 +47,22 @@ HTTP/WebSocket layer (no native deps):
 - **API / Endpoint Discovery** — probe for exposed `.env` / `.git`, source
   maps, swagger/OpenAPI and GraphQL introspection
 
+**Kali-grade application-layer toolset (desktop + iOS):** in-browser
+equivalents of the Kali web/app suite:
+- **Crypto Lab** — CyberChef-style encode/decode, hashing, HMAC, AES-256-GCM
+  (PBKDF2), hash identification and Shannon-entropy analysis
+- **Content Discovery** — gobuster/ffuf-style directory & file brute force
+  with extensions, soft-404 filtering and concurrency
+- **Tech Fingerprint** — Wappalyzer/WhatWeb-style stack detection from
+  headers, HTML and script signatures (with versions)
+- **Param Miner** — Arjun-style hidden GET/POST parameter discovery via
+  reflection and response-diff
+- **Open Redirect Scanner** — redirect-param probes across Location/meta/JS sinks
+- **Clickjacking Tester** — XFO/CSP analysis plus a live iframe PoC
+- **CSRF PoC Builder** — auto-submitting HTML or `fetch()` PoC from any request
+- **Reverse Shell Generator** — msfvenom-style one-liners (bash/python/php/nc/
+  powershell/…) with LHOST/LPORT and url/base64 encoding
+
 > **Boundary:** raw L2/L3 packet capture/injection (pcap, ARP, monitor mode)
 > is impossible from a browser and lives in the desktop daemon tier. The iOS
 > Offense tools operate at the application layer — which is where most
