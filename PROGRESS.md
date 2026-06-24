@@ -49,14 +49,14 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Password / Wordlist Builder (rules + mutations, IndexedDB save/load)
 - [x] Payload Library (curated XSS/SQLi/LFI/SSRF, filter, copy, custom)
 - [x] Hash Cracker (MD5/SHA-1/256/384/512 dictionary + brute force)
-- [ ] SSL/TLS Inspector (crt.sh cert history + TLS reachability probe)
-- [ ] OSINT Dashboard (crt.sh subdomains + DNS aggregation)
-- [ ] Report Builder (findings → markdown/HTML, export, drafts in IndexedDB)
+- [x] SSL/TLS Inspector (crt.sh cert history + TLS reachability probe)
+- [x] OSINT Dashboard (crt.sh subdomains + DNS aggregation)
+- [x] Report Builder (findings → markdown/HTML, export, drafts in IndexedDB)
 
 ### Phase 3 — iOS section screens
-- [x] Library section → live Payload Library + saved wordlists  *(wired to tools)*
-- [ ] Reports section → live Report Builder
-- [ ] Settings section → CORS proxy, DoH provider, data export/clear
+- [x] Library section → live Payload Library
+- [x] Reports section → live Report Builder
+- [x] Settings section → CORS proxy, DoH provider, data clear, about
 
 ### Phase 4 — Daemon-connected tools (desktop, protocol UIs)
 > All driven by JSON messages over `ws://localhost:7373`. Render full UI;
@@ -81,4 +81,8 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 
 ## Session log
 - **S1**: Foundation shell shipped (Phase 0). Committed.
-- **S1 (overnight)**: Building Phase 1 + Phase 2 tools. See commits.
+- **S1 (overnight)**: Phases 1–3 DONE. All 11 browser-native tools live
+  (JWT, Header Inspector, DNS Recon, HTTP Fuzzer, Subdomain Enum, Wordlist
+  Builder, Payload Library, Hash Cracker, SSL Inspector, OSINT, Report
+  Builder). iOS Library/Reports/Settings wired. MD5 verified vs vectors.
+  **Next up: Phase 4 — daemon-connected tools (Network Scanner first).**

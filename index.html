@@ -1477,6 +1477,130 @@ Impl["osint"] = (root) => {
   dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 };
 
+/* ===================== REPORT BUILDER ===================== */
+const SEVERITIES = ["Critical", "High", "Medium", "Low", "Info"];
+function reportMarkdown(s) {
+  const lines = [];
+  lines.push("# " + (s.meta.title || "Penetration Test Report"));
+  lines.push("");
+  lines.push("| | |"); lines.push("|---|---|");
+  if (s.meta.target) lines.push("| **Target** | " + s.meta.target + " |");
+  if (s.meta.author) lines.push("| **Author** | " + s.meta.author + " |");
+  lines.push("| **Date** | " + (s.meta.date || new Date().toISOString().slice(0, 10)) + " |");
+  lines.push("");
+  const counts = {}; SEVERITIES.forEach(x => counts[x] = 0); s.findings.forEach(f => counts[f.sev]++);
+  lines.push("## Summary"); lines.push("");
+  lines.push("| Severity | Count |"); lines.push("|---|---|");
+  SEVERITIES.forEach(x => { if (counts[x]) lines.push("| " + x + " | " + counts[x] + " |"); });
+  lines.push(""); lines.push("Total findings: **" + s.findings.length + "**"); lines.push("");
+  lines.push("## Findings"); lines.push("");
+  s.findings.forEach((f, i) => {
+    lines.push("### " + (i + 1) + ". " + (f.title || "Untitled") + " — _" + f.sev + "_"); lines.push("");
+    if (f.desc) { lines.push("**Description**"); lines.push(""); lines.push(f.desc); lines.push(""); }
+    if (f.evidence) { lines.push("**Evidence / PoC**"); lines.push(""); lines.push("```"); lines.push(f.evidence); lines.push("```"); lines.push(""); }
+    if (f.remediation) { lines.push("**Remediation**"); lines.push(""); lines.push(f.remediation); lines.push(""); }
+  });
+  return lines.join("\n");
+}
+function mdToHtml(md) {
+  const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = []; let inCode = false, inTable = false;
+  md.split("\n").forEach(line => {
+    if (line.startsWith("```")) { inCode = !inCode; out.push(inCode ? "<pre><code>" : "</code></pre>"); return; }
+    if (inCode) { out.push(esc(line)); return; }
+    if (line.startsWith("### ")) return out.push("<h3>" + esc(line.slice(4)) + "</h3>");
+    if (line.startsWith("## ")) return out.push("<h2>" + esc(line.slice(3)) + "</h2>");
+    if (line.startsWith("# ")) return out.push("<h1>" + esc(line.slice(2)) + "</h1>");
+    if (line.startsWith("|")) {
+      if (!inTable) { out.push("<table>"); inTable = true; }
+      if (/^\|[\s|:-]+\|$/.test(line)) return;
+      out.push("<tr>" + line.split("|").slice(1, -1).map(c => "<td>" + esc(c.trim()).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>") + "</td>").join("") + "</tr>");
+      return;
+    } else if (inTable) { out.push("</table>"); inTable = false; }
+    if (!line.trim()) return out.push("");
+    out.push("<p>" + esc(line).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/_(.+?)_/g, "<i>$1</i>") + "</p>");
+  });
+  if (inTable) out.push("</table>");
+  return `<!doctype html><meta charset=utf-8><title>Report</title><style>body{font:15px/1.6 system-ui;max-width:820px;margin:40px auto;padding:0 20px;color:#111}h1,h2,h3{line-height:1.25}table{border-collapse:collapse;margin:10px 0}td{border:1px solid #ccc;padding:5px 10px}pre{background:#f4f4f4;padding:12px;border-radius:6px;overflow:auto}code{font-family:ui-monospace,monospace}</style>\n` + out.join("\n");
+}
+Impl["report-builder"] = (root) => {
+  let state = { meta: { title: "", target: "", author: "", date: new Date().toISOString().slice(0, 10) }, findings: [] };
+  const save = () => DB.set("reports", "draft", state).catch(() => {});
+  const title = UIKit.field("Report title", { placeholder: "Web App Assessment — Acme" });
+  const target = UIKit.field("Target", { placeholder: "acme.example.com" });
+  const author = UIKit.field("Author", { value: "" });
+  const date = UIKit.field("Date", { type: "date", value: state.meta.date });
+  [["title", title], ["target", target], ["author", author], ["date", date]].forEach(([k, f]) => f.input.addEventListener("input", () => { state.meta[k] = f.input.value; save(); }));
+
+  const fTitle = UIKit.field("Finding title", { placeholder: "Reflected XSS in search" });
+  const fSev = UIKit.select("Severity", SEVERITIES);
+  const fDesc = UIKit.area("Description", { placeholder: "What & impact…" });
+  const fEvi = UIKit.area("Evidence / PoC", { placeholder: "request/response, payload…" });
+  const fRem = UIKit.area("Remediation", { placeholder: "How to fix…" });
+  const findingsWrap = el("div", {});
+  const o = UIKit.out();
+
+  function renderFindings() {
+    findingsWrap.innerHTML = "";
+    if (!state.findings.length) { findingsWrap.appendChild(el("div", { class: "hint" }, "no findings yet")); }
+    state.findings.forEach((f, i) => {
+      findingsWrap.appendChild(el("div", { class: "list-row" },
+        el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, (i + 1) + ". " + (f.title || "Untitled"), " ", el("span", { class: "tag sev-" + f.sev.toLowerCase().slice(0, 4) }, f.sev)), el("div", { class: "lr-sub" }, (f.desc || "").slice(0, 80))),
+        UIKit.btn("↑", () => { if (i > 0) { [state.findings[i - 1], state.findings[i]] = [state.findings[i], state.findings[i - 1]]; save(); renderFindings(); } }, "ghost"),
+        UIKit.btn("Del", () => { state.findings.splice(i, 1); save(); renderFindings(); }, "ghost")));
+    });
+  }
+  const addFinding = () => {
+    if (!fTitle.input.value.trim()) return Toast.show("Finding needs a title", "err");
+    state.findings.push({ title: fTitle.input.value, sev: fSev.input.value, desc: fDesc.input.value, evidence: fEvi.input.value, remediation: fRem.input.value });
+    [fTitle, fDesc, fEvi, fRem].forEach(f => f.input.value = "");
+    save(); renderFindings(); Toast.show("Finding added");
+  };
+  const preview = () => o.set(reportMarkdown(state));
+  const dl = (kind) => {
+    const md = reportMarkdown(state);
+    const content = kind === "html" ? mdToHtml(md) : md;
+    const blob = new Blob([content], { type: kind === "html" ? "text/html" : "text/markdown" });
+    const a = el("a", { href: URL.createObjectURL(blob), download: (state.meta.title || "report").replace(/\s+/g, "-").toLowerCase() + "." + (kind === "html" ? "html" : "md") });
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  (async () => { const d = await DB.get("reports", "draft").catch(() => null); if (d) { state = d; title.input.value = state.meta.title || ""; target.input.value = state.meta.target || ""; author.input.value = state.meta.author || ""; date.input.value = state.meta.date || ""; } renderFindings(); })();
+
+  root.append(
+    UIKit.panel("Report details", null, el("div", { class: "toolbar" }, title.wrap, target.wrap), el("div", { class: "toolbar" }, author.wrap, date.wrap)),
+    UIKit.panel("Add finding", null, el("div", { class: "toolbar" }, fTitle.wrap, fSev.wrap), fDesc.wrap, fEvi.wrap, fRem.wrap, el("div", { class: "row" }, UIKit.btn("Add finding", addFinding, "primary"))),
+    UIKit.panel("Findings", null, findingsWrap),
+    UIKit.panel("Export", UIKit.copyBtn(() => reportMarkdown(state)),
+      el("div", { class: "row" }, UIKit.btn("Preview markdown", preview, "primary"), UIKit.btn("Download .md", () => dl("md")), UIKit.btn("Download .html", () => dl("html"))), o.node));
+};
+
+/* ===================== SETTINGS (shared) ===================== */
+function renderSettings(node, isIOS) {
+  node.innerHTML = "";
+  const proxy = UIKit.field("CORS proxy (optional)", { value: Settings.get("corsProxy", ""), placeholder: "https://proxy/?url={url}", mono: true });
+  proxy.input.addEventListener("change", () => { Settings.set("corsProxy", proxy.input.value.trim()); Toast.show("Saved"); });
+  const doh = UIKit.select("DoH provider", [["cloudflare", "Cloudflare"], ["google", "Google"]]);
+  doh.input.value = Settings.get("dohProvider", "cloudflare");
+  doh.input.addEventListener("change", () => { Settings.set("dohProvider", doh.input.value); Toast.show("Saved"); });
+  const c = Platform.connection;
+  const about = el("div", { class: "out" });
+  about.innerHTML = "FreakSploit — single-file, zero-install suite\n" +
+    "mode      : " + Platform.mode + (Platform.forced ? " (forced)" : "") + "\n" +
+    "storage   : " + (DB.available() ? "IndexedDB ready" : "unavailable") + "\n" +
+    "offline   : " + '<span id="swState">checking…</span>' + "\n" +
+    (c ? "network   : " + c.type + "\n" : "");
+  const clearData = UIKit.btn("Clear all local data", () => {
+    if (!confirm("Delete all wordlists, payloads, reports and settings?")) return;
+    indexedDB.deleteDatabase("freaksploit");
+    Toast.show("Cleared — reload to apply");
+  }, "ghost");
+  const body = el("div", { class: "tool-body" },
+    UIKit.panel("Network", null, proxy.wrap, el("div", { class: "hint" }, "use {url} placeholder; lets cross-origin tools (headers, crt.sh) read responses"), doh.wrap),
+    UIKit.panel("About", null, about),
+    UIKit.panel("Data", null, el("div", { class: "row" }, clearData)));
+  node.appendChild(body);
+}
+
 /* --------------------------------------------------------------------- *
  *  Shared tool-view renderer (used by desktop main + reused content)
  * --------------------------------------------------------------------- */
@@ -1769,22 +1893,15 @@ const IOSUI = (() => {
     tools = universalTools;
     buildPager();
     buildTabs();
-    simpleList($("#iosLibrary"), "Payload & Wordlist Library", "Curated payloads and saved wordlists will live here, persisted to IndexedDB. Scaffold ready.");
-    simpleList($("#iosReports"), "Reports", "Draft, manage and export structured pentest reports. Drafts persist offline. Scaffold ready.");
-    renderSettings();
+    mountSection($("#iosLibrary"), "payload-library");
+    mountSection($("#iosReports"), "report-builder");
+    renderSettings($("#iosSettings"), true);
   }
-  function renderSettings() {
-    const node = $("#iosSettings");
+  function mountSection(node, toolId) {
     node.innerHTML = "";
-    const c = Platform.connection;
-    node.appendChild(el("div", { class: "ios-card" },
-      el("div", { class: "ic-top" }, el("div", { class: "ic-name" }, "About")),
-      el("div", { class: "ic-desc", html:
-        `FreakSploit — single-file, zero-install security suite.<br><br>` +
-        `Mode: <b>iOS (pure browser)</b><br>` +
-        `Storage: <b>${DB.available() ? "IndexedDB ready" : "unavailable"}</b><br>` +
-        `Offline shell: <b id="swState">checking…</b><br>` +
-        (c ? `Connection: <b>${c.type}</b>` : "") })));
+    const body = el("div", { class: "tool-body" });
+    node.appendChild(body);
+    try { Impl[toolId](body, {}); } catch (e) { body.appendChild(el("div", { class: "out err" }, e.message)); }
   }
   return { init, showSection };
 })();
