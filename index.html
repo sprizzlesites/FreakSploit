@@ -907,6 +907,26 @@ function relTime(ts) {
   for (const [s, ms] of u) if (a >= ms) { const n = Math.round(a / ms); return (d < 0 ? n + s + " ago" : "in " + n + s); }
   return "now";
 }
+/* bounded-concurrency runner with cancellation */
+function makePool() {
+  let cancelled = false;
+  return {
+    cancel() { cancelled = true; },
+    async run(items, n, worker, onProgress) {
+      let i = 0, done = 0; const results = new Array(items.length);
+      const next = async () => {
+        while (i < items.length && !cancelled) {
+          const idx = i++;
+          try { results[idx] = await worker(items[idx], idx); } catch (e) { results[idx] = { error: e.message }; }
+          onProgress && onProgress(++done, items.length);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(n, items.length) }, next));
+      return results;
+    },
+  };
+}
+const SAMPLE_SUBS = ["www","mail","ftp","webmail","smtp","pop","ns1","ns2","admin","api","dev","staging","test","portal","vpn","m","blog","shop","app","cdn","img","static","secure","beta","gateway","git","db","mysql","remote","cpanel","autodiscover","mx","email","cloud","docs","support","status","dashboard","internal"];
 
 /* ===================== JWT ANALYZER ===================== */
 Impl["jwt-analyzer"] = (root) => {
@@ -1049,6 +1069,105 @@ Impl["dns-recon"] = (root) => {
       el("div", { class: "row" }, UIKit.btn("Resolve", run, "primary"))),
     UIKit.panel("Records", null, o.node));
   dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== HTTP FUZZER ===================== */
+Impl["http-fuzzer"] = (root) => {
+  const url = UIKit.field("URL (use FUZZ as the injection point)", { placeholder: "https://example.com/api?id=FUZZ", mono: true });
+  const method = UIKit.select("Method", ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]);
+  const conc = UIKit.field("Concurrency", { type: "number", value: "8", min: "1", max: "30" });
+  const wl = UIKit.area("Payloads (one per line)", { placeholder: "1\n2\n' OR '1'='1\n../../etc/passwd\n<img src=x onerror=alert(1)>" });
+  const body = UIKit.area("Body / headers (optional, body uses FUZZ too)", { placeholder: "" });
+  const bar = el("i", {}); const prog = el("div", { class: "bar" }, bar);
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "#"), el("th", {}, "payload"), el("th", {}, "status"), el("th", {}, "len"), el("th", {}, "ms"), el("th", {}, "note"))), tbody);
+  let pool = null;
+  const run = async () => {
+    if (pool) { pool.cancel(); pool = null; runBtn.textContent = "Run fuzzer"; return; }
+    tbody.innerHTML = ""; bar.style.width = "0";
+    const u = url.input.value.trim();
+    if (!u.includes("FUZZ")) return Toast.show("URL needs a FUZZ marker", "err");
+    const words = wl.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+    if (!words.length) return Toast.show("Add payloads", "err");
+    runBtn.textContent = "Stop";
+    pool = makePool();
+    const lengths = [];
+    const results = await pool.run(words, clamp(+conc.input.value || 8, 1, 30), async (w) => {
+      const target = u.replace(/FUZZ/g, encodeURIComponent(w));
+      const opts = { method: method.input.value, redirect: "manual" };
+      if (body.input.value.trim() && method.input.value !== "GET" && method.input.value !== "HEAD") opts.body = body.input.value.replace(/FUZZ/g, w);
+      const t0 = performance.now();
+      try {
+        const r = await Net.fetchURL(target, opts);
+        const txt = await r.text().catch(() => "");
+        return { w, status: r.status, len: txt.length, ms: Math.round(performance.now() - t0), type: r.type };
+      } catch (e) { return { w, status: 0, len: 0, ms: Math.round(performance.now() - t0), err: e.message }; }
+    }, (d, t) => bar.style.width = (d / t * 100) + "%");
+    pool = null; runBtn.textContent = "Run fuzzer";
+    results.forEach(r => { if (r && r.len) lengths.push(r.len); });
+    const avg = lengths.reduce((a, b) => a + b, 0) / (lengths.length || 1);
+    results.forEach((r, i) => {
+      if (!r) return;
+      let note = "";
+      if (r.err) note = r.err;
+      else if (r.type === "opaque") note = "opaque (CORS)";
+      else if (r.status >= 500) note = "server error";
+      else if (r.status >= 300 && r.status < 400) note = "redirect";
+      else if (r.len && Math.abs(r.len - avg) > avg * 0.5) note = "⚠ length anomaly";
+      const sc = r.status >= 500 ? "err" : r.status >= 400 ? "warn" : r.status ? "ok" : "dim";
+      tbody.appendChild(el("tr", {}, el("td", {}, String(i + 1)), el("td", {}, r.w.slice(0, 40)),
+        el("td", { class: sc }, String(r.status || "—")), el("td", {}, String(r.len)), el("td", {}, String(r.ms)),
+        el("td", { class: /anomaly|error/.test(note) ? "sev-high" : "muted" }, note)));
+    });
+    Toast.show("Done — " + results.length + " requests");
+  };
+  const runBtn = UIKit.btn("Run fuzzer", run, "primary");
+  root.append(
+    UIKit.panel("Fuzz config", null, url.wrap, el("div", { class: "toolbar" }, method.wrap, conc.wrap), wl.wrap, body.wrap,
+      el("div", { class: "row" }, runBtn, el("span", { class: "hint" }, "cross-origin response bodies may be opaque; status/timing still observed"))),
+    UIKit.panel("Progress", null, prog),
+    UIKit.panel("Results", null, el("div", { style: "max-height:380px;overflow:auto" }, tbl)));
+};
+
+/* ===================== SUBDOMAIN ENUMERATOR ===================== */
+Impl["subdomain-enum"] = (root) => {
+  const dom = UIKit.field("Apex domain", { placeholder: "example.com", mono: true });
+  const conc = UIKit.field("Concurrency", { type: "number", value: "10", min: "1", max: "40" });
+  const wl = UIKit.area("Wordlist (one label per line)", { value: SAMPLE_SUBS.join("\n") });
+  const bar = el("i", {}); const prog = el("div", { class: "bar" }, bar);
+  const stat = el("div", { class: "hint" }, "");
+  const o = UIKit.out();
+  let pool = null;
+  const run = async () => {
+    if (pool) { pool.cancel(); pool = null; runBtn.textContent = "Enumerate"; return; }
+    o.clear(); bar.style.width = "0";
+    const base = dom.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!base) return Toast.show("Enter a domain", "err");
+    const words = wl.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+    // wildcard detection
+    try {
+      const rnd = "zzq" + Math.random().toString(36).slice(2, 8);
+      const wc = await Net.doh(rnd + "." + base, "A");
+      if ((wc.Answer || []).length) o.line("⚠ wildcard DNS detected — results may include false positives", "warn");
+    } catch {}
+    runBtn.textContent = "Stop"; let found = 0;
+    pool = makePool();
+    const results = await pool.run(words, clamp(+conc.input.value || 10, 1, 40), async (w) => {
+      const host = w + "." + base;
+      try { const d = await Net.doh(host, "A"); const ips = (d.Answer || []).filter(a => a.type === 1).map(a => a.data); return { host, ips }; }
+      catch { return { host, ips: [] }; }
+    }, (done, total) => { bar.style.width = (done / total * 100) + "%"; stat.textContent = done + "/" + total + " checked · " + found + " found"; });
+    for (const r of results) if (r && r.ips && r.ips.length) { found++; o.line(r.host.padEnd(30) + " " + r.ips.join(", "), "ok"); }
+    stat.textContent = words.length + " checked · " + found + " found";
+    if (!found) o.line("no subdomains resolved", "dim");
+    pool = null; runBtn.textContent = "Enumerate";
+  };
+  const runBtn = UIKit.btn("Enumerate", run, "primary");
+  root.append(
+    UIKit.panel("Target", null, dom.wrap, el("div", { class: "toolbar" }, conc.wrap), wl.wrap,
+      el("div", { class: "row" }, runBtn, el("span", { class: "right" }, stat))),
+    UIKit.panel("Progress", null, prog),
+    UIKit.panel("Resolved hosts", null, o.node));
 };
 
 /* --------------------------------------------------------------------- *
