@@ -12,68 +12,97 @@ CDN) and it runs. No build step, no bundler, no npm, no server-side compute.
 
 ## Status — Functional suite
 
-The shell **and all 18 tools** are implemented. Browser-native tools run on
+The shell **and all 67 tools** (60 universal + 7 daemon-only) are implemented. Browser-native tools run on
 desktop and iOS; daemon tools render full protocol UIs that activate when the
 WebSocket is connected. Verified with a headless Playwright smoke test
-(`test/smoke.mjs`): both layouts mount with no runtime errors, all 19 routes
-render, and the word "daemon" never appears anywhere in the iOS build.
+(`test/smoke.mjs`): both layouts mount with no runtime errors, all routes render, and the word "daemon" never appears anywhere in the iOS build.
 
-### Tools
+### Tools — 60 universal (iOS + desktop) + 7 daemon-only
 
-**Browser-native (desktop + iOS):** JWT Analyzer (decode + HS verify),
-Header Inspector (security grading), DNS Recon (DoH), HTTP Fuzzer (FUZZ +
-anomaly detection), Subdomain Enumerator (DoH brute force), Password/Wordlist
-Builder (mutations + IndexedDB), Payload Library (curated + custom), Hash
-Cracker (MD5/SHA dictionary + brute force), SSL/TLS Inspector (crt.sh + probe),
-OSINT Dashboard (crt.sh + DNS), Report Builder (markdown/HTML export).
+**Recon** (18)
 
-**Offense — active testing (desktop + iOS):** for finding common
-"vibe-coded" bugs in *your own* apps from any device, all at the
-HTTP/WebSocket layer (no native deps):
-- **Secret Scanner** — fetch HTML + JS bundles + source maps, hunt leaked
-  API keys / env vars / tokens (the #1 client-shipped-secrets mistake)
-- **Request Forge** — build/tamper/replay any HTTP request, import from cURL
-- **WebSocket Workbench** — live frame sniff + inject + fuzz (real, in-browser)
-- **Auth / Token Lab** — forge JWTs (alg:none, role→admin, resign) and replay
-  them against an endpoint to test signature/claim validation
-- **Param / Price Tamper** — auto-mutate price/qty/role/id and flag when the
-  server trusts client values (broken object-level authz / mass assignment)
-- **Injection Tester** — SQLi/NoSQLi/SSTI/cmd with error, time-based and
-  reflection detection
-- **IDOR / Access Probe** — enumerate neighbouring object IDs and diff
-  authed vs unauthed responses (broken object-level authorization)
-- **CORS Tester** — behavioural detection of exploitable CORS (wildcard,
-  reflected origin, credentialed cross-origin reads)
-- **API / Endpoint Discovery** — probe for exposed `.env` / `.git`, source
-  maps, swagger/OpenAPI and GraphQL introspection
+- 🛰️ **DNS Recon** — DNS lookups via public DNS-over-HTTPS resolvers.
+- 🌐 **Subdomain Enum** — Wordlist-driven subdomain brute force via fetch() probing.
+- 🔎 **OSINT Dashboard** — Passive recon aggregator over public APIs (crt.sh, whois, Shodan).
+- 📁 **Content Discovery** — Directory & file brute force (gobuster/ffuf-style) with extensions, soft-404 filtering and concurrency.
+- 🔬 **Tech Fingerprint** — Identify server, frameworks, CMS and JS libraries from headers, HTML and script signatures (Wappalyzer-style).
+- 🛡️ **WAF Detector** — Fingerprint web application firewalls (Cloudflare, Akamai, Imperva, Sucuri, AWS, ModSecurity…) from headers, status and block-page signatures.
+- 🕷️ **Web Spider** — Crawl a page for links, forms, scripts, comments, emails and in-script API endpoints; optional one-hop same-origin crawl.
+- ✉️ **Email Auth Checker** — Audit a domain's SPF, DMARC and DKIM records over DNS-over-HTTPS and flag spoofable policies.
+- 📰 **WordPress Scanner** — Detect WordPress, enumerate users via the REST API, read the version and list plugins/themes.
+- 📶 **WebRTC IP Leak** — Discover local/public IP addresses leaked by the browser via WebRTC ICE candidates.
+- 📷 **EXIF / Metadata** — Read EXIF metadata (camera, timestamps, GPS) from a JPEG you pick — fully offline.
+- 🔍 **Dork Generator** — Build Google dork queries for a target — exposed files, login pages, directory listings and secrets.
+- 🃏 **Typosquat Generator** — Generate domain permutations (typos, homoglyphs, TLD swaps, bitsquats) and DNS-check which are registered.
+- 🔣 **Favicon Hash** — Compute the MurmurHash3 favicon hash Shodan uses to fingerprint and find related hosts.
+- 🪣 **Cloud Bucket Finder** — Hunt for public S3/GCS/Azure buckets from a keyword and flag listable or access-denied storage.
+- 🕰️ **Wayback Recon** — Pull a domain's historical URLs from the Wayback Machine CDX API and surface juicy paths and parameters.
+- 🤖 **robots / security.txt** — Fetch and parse robots.txt, security.txt and sitemap.xml — disallowed paths often reveal hidden endpoints.
+- 🏴 **Subdomain Takeover** — Resolve a host's CNAME and fingerprint dangling cloud services (GitHub Pages, S3, Heroku, Azure…) for takeover.
 
-**Kali-grade application-layer toolset (desktop + iOS):** in-browser
-equivalents of the Kali web/app suite:
-- **Crypto Lab** — CyberChef-style encode/decode, hashing, HMAC, AES-256-GCM
-  (PBKDF2), hash identification and Shannon-entropy analysis
-- **Content Discovery** — gobuster/ffuf-style directory & file brute force
-  with extensions, soft-404 filtering and concurrency
-- **Tech Fingerprint** — Wappalyzer/WhatWeb-style stack detection from
-  headers, HTML and script signatures (with versions)
-- **Param Miner** — Arjun-style hidden GET/POST parameter discovery via
-  reflection and response-diff
-- **Open Redirect Scanner** — redirect-param probes across Location/meta/JS sinks
-- **Clickjacking Tester** — XFO/CSP analysis plus a live iframe PoC
-- **CSRF PoC Builder** — auto-submitting HTML or `fetch()` PoC from any request
-- **Reverse Shell Generator** — msfvenom-style one-liners (bash/python/php/nc/
-  powershell/…) with LHOST/LPORT and url/base64 encoding
+**Web** (9)
 
-> **Boundary:** raw L2/L3 packet capture/injection (pcap, ARP, monitor mode)
-> is impossible from a browser and lives in the desktop daemon tier. The iOS
-> Offense tools operate at the application layer — which is where most
-> vibe-coded vulnerabilities actually are. Cross-origin tools route through
-> the optional CORS proxy configured in Settings.
+- 🎯 **HTTP Fuzzer** — Send parameterized requests via fetch(), analyze responses, detect anomalies.
+- 🧪 **Header Inspector** — Analyze HTTP response headers for security misconfigurations (CORS, CSP, HSTS).
+- 🔒 **SSL/TLS Inspector** — Analyze cert chains via fetch() + WebSocket probing.
+- 📚 **Payload Library** — Curated XSS / SQLi / LFI payload sets, filterable, copy-to-clipboard.
+- 🧱 **CSP Auditor** — Fetch or paste a Content-Security-Policy and grade it — unsafe-inline/eval, wildcards, missing directives.
+- 🍪 **Cookie Analyzer** — Audit Set-Cookie headers for Secure, HttpOnly, SameSite, scope and __Host-/__Secure- prefix compliance.
+- ⚠️ **Mixed Content Scanner** — Find insecure http:// resources loaded by an https:// page (scripts, styles, images, forms).
+- 🔗 **SRI Checker** — Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.
+- 🛤️ **HSTS Checker** — Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.
 
-> ⚠️ **Only test systems you own or are authorized to test.**
+**Offense** (24)
 
-**Daemon-connected (desktop only):** Network Scanner, Packet Analyzer, HTTP
-Interceptor, Interface Manager, Raw Packet Injector, Exploit Console, Remote
-Daemon Connector.
+- 🔓 **Secret Scanner** — Fetch a site's HTML + JS bundles + source maps and hunt leaked API keys, env vars and tokens.
+- 🛠️ **Request Forge** — Build, tamper and replay any HTTP request; import from cURL; inspect responses (repeater).
+- 📨 **WebSocket Workbench** — Connect to a WebSocket endpoint to sniff live frames and inject or fuzz crafted messages.
+- 🪪 **Auth / Token Lab** — Forge & tamper JWTs (alg:none, role→admin, resign), inject into requests and compare access.
+- 🏷️ **Param / Price Tamper** — Auto-mutate price, quantity, role and id fields, replay, and flag when the server trusts client values.
+- 🧨 **Injection Tester** — Probe params for SQLi / NoSQLi / SSTI / command injection with error, boolean, time-based and reflection detection.
+- 🎫 **IDOR / Access Probe** — Enumerate neighbouring object IDs and compare authed vs unauthed responses to find broken access control.
+- 🌍 **CORS Tester** — Detect exploitable CORS misconfigurations — wildcard, reflected origin and credentialed cross-origin access.
+- 🗝️ **API / Endpoint Discovery** — Probe for exposed sensitive paths — .env, .git, source maps, swagger/OpenAPI and GraphQL introspection.
+- 🪝 **Param Miner** — Discover hidden GET/POST parameters (Arjun-style) via reflection and response-diff detection.
+- ↪️ **Open Redirect Scanner** — Test redirect parameters for open-redirect to attacker domains via Location, meta and JS sinks.
+- 🖼️ **Clickjacking Tester** — Check X-Frame-Options / CSP frame-ancestors and prove framability with a live iframe PoC.
+- 🎭 **CSRF PoC Builder** — Generate an auto-submitting HTML or fetch() proof-of-concept from any request.
+- 🐚 **Reverse Shell Generator** — Generate reverse-shell one-liners (bash, python, php, nc, powershell…) with LHOST/LPORT and encoding.
+- ◈ **GraphQL Lab** — Run GraphQL introspection, enumerate queries/mutations/types and execute ad-hoc queries.
+- 🛰️ **SSRF Probe** — Test URL parameters for SSRF with cloud-metadata and internal targets plus an out-of-band canary for blind detection.
+- 🎟️ **JWT Attack Lab** — Generate JWT attack tokens: alg:none, kid path/SQLi injection, RS256→HS256 algorithm confusion and jku/x5u hijack.
+- 🔁 **HTTP Methods Tester** — Probe which HTTP verbs an endpoint accepts (PUT/DELETE/PATCH/OPTIONS) to find dangerous or misconfigured methods.
+- 🚧 **403 Bypass Tester** — Attempt access-control bypass on a forbidden path via path tricks and header overrides (X-Original-URL, X-Forwarded-For…).
+- ☣️ **Prototype Pollution Scanner** — Statically scan a site's JS for prototype-pollution sinks (deep merge, __proto__) and known-vulnerable library versions.
+- 🗄️ **Cache Poisoning Probe** — Inject unkeyed headers (X-Forwarded-Host/Scheme) and detect reflection — a web cache poisoning indicator.
+- 📜 **XXE Helper** — Generate XXE payloads (file read, SSRF, OOB exfil, parameter entities) and send test XML to an endpoint.
+- 🧩 **SSTI Builder** — Per-engine server-side template injection probes (Jinja2, Twig, Freemarker, ERB, Velocity…) and a polyglot.
+- 📂 **Path Traversal / LFI** — Test a parameter for path traversal / local file inclusion with layered encodings and file-content signatures.
+
+**Crypto** (8)
+
+- 🔑 **JWT Analyzer** — Decode, inspect and test JWTs locally via SubtleCrypto.
+- ⛏️ **Hash Cracker** — Dictionary & brute force on hashes via WebAssembly — runs locally.
+- 🧬 **Password / Wordlist** — Rule-based wordlist & password generation, saved to IndexedDB.
+- 🔐 **Crypto Lab** — CyberChef-style encode/decode, hashing, HMAC, AES-GCM, hash identification and entropy analysis.
+- 🧮 **Dev Utilities** — Epoch↔date, UUID generate/inspect, base converter and a live regex tester.
+- 🧷 **JWKS Inspector** — Fetch and parse a JWKS endpoint — list keys with kid/alg/use and compute RFC7638 thumbprints.
+- 🔥 **Pwned Password** — Check a password against Have I Been Pwned using k-anonymity — the password never leaves your device.
+- 💪 **Password Strength** — Estimate password entropy and crack time, and flag weak patterns — fully offline.
+
+**Output** (1)
+
+- 📝 **Report Builder** — Structured markdown/HTML pentest report generator, exports to file.
+
+**Daemon-connected** (desktop only, require the local Rust daemon)
+
+- 📡 **Packet Analyzer** — Wireshark-style live capture fed by raw pcap stream over WebSocket, with protocol dissection + BPF filters.
+- 🗺️ **Network Scanner** — nmap frontend — sends scan configs to daemon /exec, renders results.
+- 🕸️ **HTTP Interceptor** — Burp-style intercepting proxy; daemon intercepts, browser renders req/res editor.
+- 💥 **Exploit Console** — Metasploit-style console backed by a daemon-managed v86/CheerpX Linux runtime.
+- 🔌 **Interface Manager** — Enumerate NICs, toggle monitor mode via daemon /interfaces.
+- 💉 **Raw Packet Injector** — Craft & inject custom packets via daemon /inject.
+- 🛜 **Remote Daemon Connector** — Pair with a daemon on another LAN device or over a tunnel.
 
 ### Shell foundation
 
