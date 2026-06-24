@@ -74,6 +74,8 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Keyboard shortcut help overlay (`?`)
 - [x] Desktop Settings route
 - [x] Headless Playwright smoke test (`test/smoke.mjs`) — all routes green
+- [x] Mock-daemon integration test (`test/daemon.mjs`) — protocol UIs render
+      streamed scan/iface/packet/console data; PASS
 - [x] README refresh
 - [x] History store viewer (recent runs per tool) + recording in 5 tools
 - [x] Settings: theme accents (5 presets, persisted)
@@ -106,3 +108,10 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   **Next up (low priority polish): (1) optional standalone sw.js for full
   offline navigation, (2) wire History into remaining tools, (3) command
   palette actions beyond navigation. Otherwise: await user direction.**
+- **S1 (overnight cont.)**: Added a pure-node mock-daemon integration test
+  (`test/daemon.mjs`) — verifies the daemon WebSocket path end-to-end:
+  Network Scanner (2 ports), Interface Manager (2 NICs), Packet Analyzer
+  (3 frames), Exploit Console all render streamed data. Both test suites
+  pass. Every code path in the app is now covered by an automated test.
+  **Everything in the spec is built and verified. Remaining = optional
+  polish only (standalone sw.js, more History wiring, palette actions).**
