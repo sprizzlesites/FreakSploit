@@ -410,6 +410,23 @@ body[data-mode="ios"] #app.desktop { display: none; }
 .copy:hover { color: var(--accent); }
 .ios-back { display: inline-flex; align-items: center; gap: 6px; color: var(--cyan); font-size: 14px; margin-bottom: 12px; cursor: pointer; min-height: 32px; }
 
+/* command palette + help overlay */
+.overlay { position: fixed; inset: 0; z-index: 800; background: rgba(0,0,0,.55); display: none; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+.overlay.show { display: flex; }
+.palette { width: min(560px, 92vw); background: var(--bg-1); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px -20px #000; }
+.palette > input { width: 100%; background: var(--bg); border: none; border-bottom: 1px solid var(--line); padding: 14px 16px; outline: none; font-size: 15px; color: var(--txt); }
+.pal-list { max-height: 340px; overflow-y: auto; }
+.pal-item { display: flex; align-items: center; gap: 11px; padding: 10px 16px; cursor: pointer; }
+.pal-item.sel { background: var(--bg-3); }
+.pal-item .pi-ico { width: 20px; text-align: center; }
+.pal-item .pi-name { flex: 1; font-size: 14px; }
+.pal-item .pi-cat { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--txt-faint); }
+.help-box { width: min(440px, 92vw); background: var(--bg-1); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.help-box h3 { margin: 0 0 14px; }
+.help-box table { width: 100%; }
+.help-box td { padding: 5px 0; font-size: 13px; color: var(--txt-dim); }
+.help-box td:last-child { text-align: right; }
+
 .hidden { display: none !important; }
 </style>
 </head>
@@ -1859,6 +1876,8 @@ const DesktopUI = (() => {
       side.appendChild(el("div", { class: "nav-group-title" }, cat));
       registry.filter(t => t.cat === cat).forEach(t => side.appendChild(navItem(t)));
     }
+    side.appendChild(el("div", { class: "nav-group-title" }, "System"));
+    side.appendChild(navItem({ id: "settings", name: "Settings", icon: "⚙️" }));
     const foot = el("div", { class: "sidebar-foot" },
       `${registry.length} tools • ${Platform.mode} tier`);
     side.appendChild(foot);
@@ -1924,6 +1943,13 @@ const DesktopUI = (() => {
   function route({ route }) {
     current = route;
     if (route === "overview") { highlight("overview"); renderOverview(); return; }
+    if (route === "settings") {
+      highlight("settings");
+      const main = $("#dMain"); main.innerHTML = "";
+      main.appendChild(el("div", { class: "tool-head" }, el("div", { class: "t-ico" }, "⚙️"), el("div", {}, el("h1", {}, "Settings"), el("p", {}, "Network proxy, DoH provider and local data."))));
+      renderSettings(main, false);
+      return;
+    }
     const tool = registry.find(t => t.id === route);
     if (!tool) { Router.go("overview"); return; }
     highlight(route);
@@ -1953,15 +1979,73 @@ const DesktopUI = (() => {
       $("#daemonLabel").textContent = "daemon: " + t;
     });
     $("#daemonChip").addEventListener("click", () => Daemon.retryNow());
-    $("#cmdBtn").addEventListener("click", () => alert("Command palette ships with the tool UIs."));
+    $("#cmdBtn").addEventListener("click", () => Palette.open());
     window.addEventListener("online",  () => { $("#netDot").className = "dot green"; $("#netLabel").textContent = "online"; });
     window.addEventListener("offline", () => { $("#netDot").className = "dot red";   $("#netLabel").textContent = "offline"; });
   }
 
+  /* command palette (⌘K) + help overlay (?) */
+  const Palette = (() => {
+    let overlay, input, listNode, items = [], filtered = [], idx = 0;
+    function commands() {
+      return [
+        { id: "overview", name: "Overview", icon: "▦", cat: "nav" },
+        ...registry.map(t => ({ id: t.id, name: t.name, icon: t.icon, cat: t.cat })),
+        { id: "settings", name: "Settings", icon: "⚙️", cat: "system" },
+      ];
+    }
+    function build() {
+      input = el("input", { placeholder: "Jump to a tool…  (Esc to close)", spellcheck: "false" });
+      listNode = el("div", { class: "pal-list" });
+      overlay = el("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } },
+        el("div", { class: "palette" }, input, listNode));
+      document.body.appendChild(overlay);
+      input.addEventListener("input", render);
+      input.addEventListener("keydown", key);
+    }
+    function render() {
+      const q = input.value.toLowerCase();
+      filtered = items.filter(c => c.name.toLowerCase().includes(q) || c.cat.toLowerCase().includes(q));
+      idx = 0; draw();
+    }
+    function draw() {
+      listNode.innerHTML = "";
+      filtered.forEach((c, i) => listNode.appendChild(el("div", { class: "pal-item" + (i === idx ? " sel" : ""), onclick: () => choose(i) },
+        el("span", { class: "pi-ico" }, c.icon), el("span", { class: "pi-name" }, c.name), el("span", { class: "pi-cat" }, c.cat))));
+    }
+    function choose(i) { const c = filtered[i]; if (!c) return; close(); Router.go(c.id); }
+    function key(e) {
+      if (e.key === "Escape") return close();
+      if (e.key === "ArrowDown") { idx = clamp(idx + 1, 0, filtered.length - 1); draw(); e.preventDefault(); }
+      if (e.key === "ArrowUp") { idx = clamp(idx - 1, 0, filtered.length - 1); draw(); e.preventDefault(); }
+      if (e.key === "Enter") { choose(idx); e.preventDefault(); }
+    }
+    function open() { if (!overlay) build(); items = commands(); input.value = ""; render(); overlay.classList.add("show"); input.focus(); }
+    function close() { if (overlay) overlay.classList.remove("show"); }
+    return { open, close };
+  })();
+
+  const Help = (() => {
+    let overlay;
+    const ROWS = [["⌘K / Ctrl+K", "Command palette"], ["j / k / ↑ ↓", "Prev / next tool"], ["g", "Go to overview"], ["?", "This help"], ["Esc", "Close overlay"]];
+    function open() {
+      if (!overlay) {
+        overlay = el("div", { class: "overlay", onclick: e => { if (e.target === overlay) overlay.classList.remove("show"); } },
+          el("div", { class: "help-box" }, el("h3", {}, "Keyboard shortcuts"),
+            el("table", {}, ...ROWS.map(([k, v]) => el("tr", {}, el("td", {}, v), el("td", {}, el("kbd", {}, k)))))));
+        document.body.appendChild(overlay);
+      }
+      overlay.classList.add("show");
+    }
+    return { open };
+  })();
+
   function keyboardNav() {
     document.addEventListener("keydown", (e) => {
-      if (e.target.matches("input,textarea")) return;
-      const ids = ["overview", ...registry.map(t => t.id)];
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { Palette.open(); e.preventDefault(); return; }
+      if (e.target.matches("input,textarea,select")) return;
+      if (e.key === "?") { Help.open(); return; }
+      const ids = ["overview", ...registry.map(t => t.id), "settings"];
       const i = ids.indexOf(current);
       if (e.key === "j" || e.key === "ArrowDown") { Router.go(ids[clamp(i + 1, 0, ids.length - 1)]); e.preventDefault(); }
       if (e.key === "k" || e.key === "ArrowUp")   { Router.go(ids[clamp(i - 1, 0, ids.length - 1)]); e.preventDefault(); }
