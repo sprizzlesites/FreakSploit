@@ -119,13 +119,18 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] GraphQL Lab (introspection + query runner)
 - [x] SSRF Probe (cloud-metadata/internal targets + OOB canary)
 
+### Phase 2.8 — Kali wave 3 (universal) ✅
+- [x] Email Auth Checker (SPF/DMARC/DKIM over DoH)
+- [x] WordPress Scanner (REST user enum, version, plugins/themes)
+- [x] WebRTC IP Leak (ICE candidate harvesting)
+- [x] EXIF / Metadata Viewer (offline JPEG EXIF + GPS parser)
+
 ## Backlog / next up (when user says "continue")
-1. More Kali coverage still browser-feasible: EXIF/metadata viewer,
-   Google-dork generator, JWT alg-confusion (RS256→HS256) + kid/jku,
-   prototype-pollution probe, WebRTC local-IP leak, email SPF/DMARC/DKIM
-   checker (DoH TXT), WordPress user-enum scanner, 403-bypass tester,
-   HTTP verb/methods tester, CSP auditor, cookie-security analyzer,
-   S3/cloud-bucket finder, favicon-hash, typosquat generator.
+1. More Kali coverage still browser-feasible: Google-dork generator,
+   JWT alg-confusion (RS256→HS256) + kid/jku, prototype-pollution probe,
+   403-bypass tester, HTTP verb/methods tester, CSP auditor,
+   cookie-security analyzer, S3/cloud-bucket finder, favicon-hash,
+   typosquat generator, XXE/SSTI helper, JSON CSRF, cache-poisoning probe.
 2. NOT feasible in-browser (document as such): HTTP request smuggling
    (can't control TE/CL via fetch), raw nmap/masscan, ARP/L2.
 3. Optional standalone sw.js for full offline navigation.

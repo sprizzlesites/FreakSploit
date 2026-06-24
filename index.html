@@ -608,6 +608,11 @@ const UNIVERSAL_TOOLS = [
   { id:"web-spider",     name:"Web Spider",        icon:"🕷️", cat:"Recon", desc:"Crawl a page for links, forms, scripts, comments, emails and in-script API endpoints; optional one-hop same-origin crawl.", feat:["links/forms","endpoints","emails"] },
   { id:"graphql-lab",    name:"GraphQL Lab",       icon:"◈", cat:"Offense", desc:"Run GraphQL introspection, enumerate queries/mutations/types and execute ad-hoc queries.", feat:["introspection","query runner","schema"] },
   { id:"ssrf-probe",     name:"SSRF Probe",        icon:"🛰️", cat:"Offense", desc:"Test URL parameters for SSRF with cloud-metadata and internal targets plus an out-of-band canary for blind detection.", feat:["169.254.169.254","canary","internal"] },
+  // --- wave 3 ---
+  { id:"email-auth",     name:"Email Auth Checker", icon:"✉️", cat:"Recon", desc:"Audit a domain's SPF, DMARC and DKIM records over DNS-over-HTTPS and flag spoofable policies.", feat:["SPF","DMARC","DKIM"] },
+  { id:"wp-scan",        name:"WordPress Scanner", icon:"📰", cat:"Recon", desc:"Detect WordPress, enumerate users via the REST API, read the version and list plugins/themes.", feat:["user enum","version","plugins"] },
+  { id:"webrtc-leak",    name:"WebRTC IP Leak",    icon:"📶", cat:"Recon", desc:"Discover local/public IP addresses leaked by the browser via WebRTC ICE candidates.", feat:["local IP","STUN","mDNS"] },
+  { id:"exif-viewer",    name:"EXIF / Metadata",   icon:"📷", cat:"Recon", desc:"Read EXIF metadata (camera, timestamps, GPS) from a JPEG you pick — fully offline.", feat:["GPS","camera","offline"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -2868,6 +2873,162 @@ Impl["ssrf-probe"] = (root) => {
   root.append(
     UIKit.panel("Target", null, url.wrap, canary.wrap, el("div", { class: "row" }, UIKit.btn("Probe", run, "primary"), el("span", { class: "hint" }, "cloud-metadata + internal targets; add a canary for blind SSRF"))),
     UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== EMAIL AUTH CHECKER ===================== */
+async function dohTxt(name) { const d = await Net.doh(name, "TXT"); return (d.Answer || []).map(a => (a.data || "").replace(/^"|"$/g, "").replace(/"\s*"/g, "")); }
+Impl["email-auth"] = (root) => {
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const o = UIKit.out();
+  const SELECTORS = ["default", "google", "selector1", "selector2", "k1", "mail", "dkim", "s1", "s2", "smtp", "mandrill", "mx"];
+  const run = async () => {
+    o.clear();
+    const d = dom.input.value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!d) return o.line("enter a domain", "err");
+    o.line("SPF", "k");
+    try {
+      const spf = (await dohTxt(d)).filter(t => /^v=spf1/i.test(t));
+      if (!spf.length) o.line("✗ no SPF record — domain can be spoofed", "err");
+      else { o.line(spf[0], "v"); const all = (spf[0].match(/([~\-+?])all/) || [])[1]; o.line(all === "-" ? "✓ hard fail (-all)" : all === "~" ? "⚠ soft fail (~all)" : all === "+" ? "✗ +all allows anyone to send!" : "⚠ no explicit all mechanism", all === "-" ? "ok" : "warn"); }
+    } catch (e) { o.line("lookup error: " + e.message, "err"); }
+    o.line(""); o.line("DMARC", "k");
+    try {
+      const dmarc = (await dohTxt("_dmarc." + d)).filter(t => /^v=DMARC1/i.test(t));
+      if (!dmarc.length) o.line("✗ no DMARC record — no spoofing policy", "err");
+      else { o.line(dmarc[0], "v"); const p = (dmarc[0].match(/p=(\w+)/) || [])[1]; o.line(p === "reject" ? "✓ p=reject" : p === "quarantine" ? "⚠ p=quarantine" : "✗ p=none — monitoring only, spoofing not blocked", p === "reject" ? "ok" : "warn"); }
+    } catch (e) { o.line("lookup error: " + e.message, "err"); }
+    o.line(""); o.line("DKIM (common selectors)", "k");
+    let dkimFound = 0;
+    for (const s of SELECTORS) {
+      try { const t = (await dohTxt(s + "._domainkey." + d)).filter(x => /v=DKIM1|k=rsa|p=/i.test(x)); if (t.length) { dkimFound++; o.line("✓ " + s + "._domainkey: " + t[0].slice(0, 60) + "…", "ok"); } } catch {}
+    }
+    if (!dkimFound) o.line("no DKIM keys found at common selectors (may use a custom selector)", "dim");
+    History.add("Email Auth", d);
+  };
+  root.append(
+    UIKit.panel("Domain", null, dom.wrap, el("div", { class: "row" }, UIKit.btn("Check", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+  dom.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== WORDPRESS SCANNER ===================== */
+Impl["wp-scan"] = (root) => {
+  const url = UIKit.field("Site URL", { placeholder: "https://your-blog.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    let u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a full URL", "err");
+    if (!u.endsWith("/")) u += "/";
+    let html = "";
+    try { html = (await (await Net.fetchURL(u)).text()); } catch (e) { return o.line("fetch failed: " + e.message + " (CORS proxy may be needed)", "err"); }
+    const isWP = /wp-content|wp-includes|\/wp-json/i.test(html);
+    o.line(isWP ? "✓ WordPress detected" : "⚠ no obvious WordPress markers (continuing anyway)", isWP ? "ok" : "warn");
+    const ver = (html.match(/<meta[^>]+name=["']generator["'][^>]+WordPress\s+([0-9.]+)/i) || [])[1];
+    if (ver) o.line("version: " + ver + " (from generator meta)", "warn");
+    o.line(""); o.line("REST API user enumeration", "k");
+    try {
+      const r = await HttpKit.send({ method: "GET", url: u + "wp-json/wp/v2/users" });
+      if (r.status < 400) { try { const users = JSON.parse(r.text); if (Array.isArray(users) && users.length) { o.line("⚠ " + users.length + " user(s) exposed via /wp-json/wp/v2/users:", "err"); users.forEach(us => o.line("  • " + (us.name || "?") + "  (slug: " + (us.slug || "?") + ", id: " + us.id + ")", "v")); } else o.line("REST users endpoint returned no users", "ok"); } catch { o.line("REST users endpoint not JSON (" + r.status + ")", "dim"); } }
+      else o.line("✓ /wp-json/wp/v2/users returned " + r.status + " (enumeration blocked)", "ok");
+    } catch (e) { o.line("user enum failed: " + e.message, "dim"); }
+    o.line(""); o.line("Plugins / themes (from HTML)", "k");
+    const plugins = [...new Set([...html.matchAll(/wp-content\/plugins\/([a-z0-9\-_]+)/gi)].map(m => m[1]))];
+    const themes = [...new Set([...html.matchAll(/wp-content\/themes\/([a-z0-9\-_]+)/gi)].map(m => m[1]))];
+    if (plugins.length) plugins.forEach(p => o.line("  plugin: " + p, "dim")); else o.line("  no plugins referenced in HTML", "dim");
+    themes.forEach(t => o.line("  theme: " + t, "dim"));
+    History.add("WP Scanner", url.input.value.trim());
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Scan", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== WEBRTC IP LEAK ===================== */
+Impl["webrtc-leak"] = (root) => {
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear(); o.line("gathering ICE candidates…", "dim");
+    const ips = new Set();
+    let pc;
+    try { pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }); }
+    catch (e) { return o.line("WebRTC unavailable: " + e.message, "err"); }
+    pc.createDataChannel("fs");
+    pc.onicecandidate = (e) => {
+      if (!e.candidate) { done(); return; }
+      const m = e.candidate.candidate.match(/([0-9a-f]{1,4}(?::[0-9a-f]{1,4}){7}|(?:\d{1,3}\.){3}\d{1,3}|[a-z0-9\-]+\.local)/i);
+      if (m) { const ip = m[1]; const typ = (e.candidate.candidate.match(/typ (\w+)/) || [])[1] || ""; const key = ip + " (" + typ + ")"; if (!ips.has(key)) { ips.add(key); o.line((/\.local$/.test(ip) ? "● mDNS host: " : /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip) ? "● private: " : "● public/srflx: ") + key, /\.local$/.test(ip) ? "dim" : "warn"); } }
+    };
+    let finished = false;
+    const done = () => { if (finished) return; finished = true; o.line(""); o.line(ips.size ? ips.size + " address(es) leaked via WebRTC" : "no candidates (mDNS may be masking local IPs — that's good for privacy)", ips.size ? "warn" : "ok"); try { pc.close(); } catch {} History.add("WebRTC Leak", ips.size + " ip(s)"); };
+    try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); } catch (e) { o.line("offer error: " + e.message, "err"); }
+    setTimeout(done, 4000);
+  };
+  root.append(
+    UIKit.panel("WebRTC", null, el("div", { class: "row" }, UIKit.btn("Detect leaked IPs", run, "primary"), el("span", { class: "hint" }, "modern browsers mask local IPs behind mDNS .local hostnames"))),
+    UIKit.panel("Addresses", null, o.node));
+};
+
+/* ===================== EXIF / METADATA VIEWER ===================== */
+function parseExif(buf) {
+  const dv = new DataView(buf);
+  if (dv.getUint16(0) !== 0xFFD8) return { error: "not a JPEG (EXIF reading supported for JPEG)" };
+  let off = 2, app1 = -1;
+  while (off < dv.byteLength - 1) {
+    if (dv.getUint16(off) === 0xFFE1) { app1 = off + 4; break; }
+    if ((dv.getUint8(off)) !== 0xFF) break;
+    off += 2 + dv.getUint16(off + 2);
+  }
+  if (app1 < 0 || dv.getUint32(app1) !== 0x45786966) return { error: "no EXIF segment found in this JPEG" };
+  const tiff = app1 + 6;
+  const le = dv.getUint16(tiff) === 0x4949;
+  const u16 = o => dv.getUint16(o, le), u32 = o => dv.getUint32(o, le), i32 = o => dv.getInt32(o, le);
+  const TAGS = { 0x010F: "Make", 0x0110: "Model", 0x0112: "Orientation", 0x0131: "Software", 0x0132: "DateTime", 0x9003: "DateTimeOriginal", 0x829A: "ExposureTime", 0x829D: "FNumber", 0x8827: "ISO", 0x920A: "FocalLength", 0xA002: "PixelXDim", 0xA003: "PixelYDim", 0x9209: "Flash" };
+  const GPS = { 1: "GPSLatRef", 2: "GPSLat", 3: "GPSLongRef", 4: "GPSLong", 5: "GPSAltRef", 6: "GPSAlt" };
+  const out = {};
+  const sizes = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
+  function readEntry(e, type, cnt) {
+    const sz = (sizes[type] || 1) * cnt; const dataOff = sz > 4 ? tiff + u32(e + 8) : e + 8;
+    if (type === 2) { let s = ""; for (let k = 0; k < cnt - 1; k++) s += String.fromCharCode(dv.getUint8(dataOff + k)); return s; }
+    const a = []; let p = dataOff;
+    for (let k = 0; k < cnt; k++) { if (type === 3) { a.push(u16(p)); p += 2; } else if (type === 4) { a.push(u32(p)); p += 4; } else if (type === 5) { a.push(u32(p) / (u32(p + 4) || 1)); p += 8; } else if (type === 10) { a.push(i32(p) / (i32(p + 4) || 1)); p += 8; } else { a.push(dv.getUint8(p)); p += 1; } }
+    return a.length === 1 ? a[0] : a;
+  }
+  function readIFD(start, map, isGps) {
+    const n = u16(start);
+    for (let i = 0; i < n; i++) {
+      const e = start + 2 + i * 12, tag = u16(e), type = u16(e + 2), cnt = u32(e + 4);
+      if (!isGps && tag === 0x8769) { readIFD(tiff + u32(e + 8), TAGS, false); continue; }
+      if (!isGps && tag === 0x8825) { readIFD(tiff + u32(e + 8), GPS, true); continue; }
+      if (map[tag]) out[map[tag]] = readEntry(e, type, cnt);
+    }
+  }
+  try { readIFD(tiff + u32(tiff + 4), TAGS, false); } catch (e) { return { error: "parse error: " + e.message }; }
+  // GPS decimal
+  if (out.GPSLat && Array.isArray(out.GPSLat)) { const dec = out.GPSLat[0] + out.GPSLat[1] / 60 + out.GPSLat[2] / 3600; out.Latitude = (out.GPSLatRef === "S" ? -dec : dec).toFixed(6); }
+  if (out.GPSLong && Array.isArray(out.GPSLong)) { const dec = out.GPSLong[0] + out.GPSLong[1] / 60 + out.GPSLong[2] / 3600; out.Longitude = (out.GPSLongRef === "W" ? -dec : dec).toFixed(6); }
+  return out;
+}
+Impl["exif-viewer"] = (root) => {
+  const o = UIKit.out(); o.set("pick a JPEG to read its metadata");
+  const file = el("input", { type: "file", accept: "image/*", style: "padding:8px" });
+  const mapLink = el("div", {});
+  file.addEventListener("change", () => {
+    const f = file.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const data = parseExif(r.result);
+      o.clear(); mapLink.innerHTML = "";
+      if (data.error) { o.line(data.error, "warn"); o.line("file: " + f.name + " (" + f.size + " bytes, " + (f.type || "?") + ")", "dim"); return; }
+      o.line("file: " + f.name + " (" + f.size + " bytes)", "dim"); o.line("");
+      for (const [k, v] of Object.entries(data)) if (!/^GPS(Lat|Long|Alt)/.test(k)) o.line(k.padEnd(18) + " " + (Array.isArray(v) ? v.join(", ") : v), /Latitude|Longitude/.test(k) ? "err" : "v");
+      if (data.Latitude && data.Longitude) mapLink.appendChild(el("a", { href: "https://www.openstreetmap.org/?mlat=" + data.Latitude + "&mlon=" + data.Longitude + "#map=15/" + data.Latitude + "/" + data.Longitude, target: "_blank" }, "⚠ open GPS location on map →"));
+    };
+    r.readAsArrayBuffer(f);
+  });
+  root.append(
+    UIKit.panel("Image", null, file, el("div", { class: "hint" }, "everything runs locally — the image is never uploaded")),
+    UIKit.panel("Metadata", null, o.node, mapLink));
 };
 
 /* ===================== HISTORY (shared) ===================== */

@@ -178,6 +178,23 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close(); s.close();
 }
 
+/* WordPress Scanner */
+{
+  const { s, url } = await serve((req, res) => {
+    if (req.url === '/wp-json/wp/v2/users') { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify([{ id: 1, name: 'Site Admin', slug: 'admin' }, { id: 2, name: 'Editor Jane', slug: 'jane' }])); }
+    res.end('<html><head><meta name="generator" content="WordPress 6.4.2"></head><body><link href="/wp-content/plugins/contact-form-7/x.css"><link href="/wp-content/themes/twentytwentyfour/style.css"></body></html>');
+  });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/wp-scan', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url);
+  await p.locator('#dMain').getByText('Scan', { exact: true }).click();
+  await p.waitForTimeout(1500);
+  const txt = await out(p);
+  ok('WP Scanner: detect + user enum + version + plugin', /WordPress detected/.test(txt) && /admin/.test(txt) && /6\.4\.2/.test(txt) && /contact-form-7/.test(txt));
+  await p.close(); s.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);
