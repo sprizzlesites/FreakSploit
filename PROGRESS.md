@@ -80,8 +80,8 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] History store viewer (recent runs per tool) + recording in 5 tools
 - [x] Settings: theme accents (5 presets, persisted)
 - [x] Screenshots in README (docs/*.png, captured via Playwright)
+- [x] History recording wired into all 10 result-producing tools
 - [ ] Real sw.js option for full offline navigation (currently blob SW)
-- [ ] More tools recording to History (only 5 wired so far)
 - [ ] Command palette: actions (not just navigation), recent-first ordering
 
 ---
