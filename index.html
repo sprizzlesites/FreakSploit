@@ -249,25 +249,96 @@ body[data-mode="ios"] #app.desktop { display: none; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--txt-faint); margin: 22px 0 10px; }
 .section-title:first-child { margin-top: 0; }
 
-/* ============================================================ iOS LAYOUT */
-#app.ios { flex-direction: column; height: 100%; padding-top: var(--safe-t); }
-.ios-topbar {
-  height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 16px;
-  border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none;
+/* ============================================================ iOS LAYOUT — retro HUD */
+#app.ios {
+  flex-direction: column; height: 100%; padding-top: var(--safe-t);
+  background:
+    radial-gradient(130% 80% at 50% -15%, rgba(52,211,153,.07), transparent 55%),
+    radial-gradient(100% 60% at 100% 110%, rgba(56,189,248,.05), transparent 60%),
+    var(--bg);
 }
-.ios-topbar .brand { font-family: var(--mono); font-weight: 700; letter-spacing: .06em; color: var(--accent); font-size: 16px; }
-.ios-topbar .brand span { color: var(--txt-faint); }
-.ios-topbar .spacer { flex: 1; }
-.ios-topbar .it-screen { font-size: 13px; color: var(--txt-dim); }
 
-/* horizontal swipe pager */
+/* device-style status bar */
+.ios-statusbar {
+  height: 32px; flex: none; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  color: var(--txt-dim); border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(180deg, rgba(15,21,19,.9), transparent);
+}
+.ios-statusbar .sb-brand { color: var(--accent); font-weight: 700; text-shadow: 0 0 10px rgba(52,211,153,.5); }
+.ios-statusbar .sb-brand span { color: var(--txt-faint); }
+.ios-statusbar .sb-right { display: flex; align-items: center; gap: 7px; }
+.ios-statusbar .sb-right .dot { width: 7px; height: 7px; }
+
 .ios-stage { flex: 1; position: relative; overflow: hidden; }
 .ios-section { position: absolute; inset: 0; display: none; flex-direction: column; }
-.ios-section.active { display: flex; }
+.ios-section.active { display: flex; animation: secIn .22s ease both; }
+@keyframes secIn { from { opacity: 0; transform: translateY(8px) scale(.995); } to { opacity: 1; transform: none; } }
 
-.swipe-dots { display: flex; gap: 6px; justify-content: center; padding: 8px 0 4px; flex: none; }
-.swipe-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--bg-3); transition: all .2s; }
-.swipe-dots i.on { background: var(--accent); width: 16px; border-radius: 3px; }
+/* ---- HOME / springboard ---- */
+.home-scroll {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 18px;
+  background-image: repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px);
+}
+.home-head { padding: 16px 18px 4px; }
+.home-title {
+  font-family: var(--mono); font-size: 22px; font-weight: 800; letter-spacing: .2em; color: var(--txt);
+  display: flex; align-items: baseline; gap: 8px;
+}
+.home-title::before { content: "▌"; color: var(--accent); font-size: 20px; animation: blink 1.1s steps(1) infinite; text-shadow: 0 0 10px var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+.home-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--txt-faint); margin-top: 4px; }
+.home-search-wrap { position: relative; margin: 14px 0 2px; }
+.home-search-wrap::before { content: "›"; position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--accent); font-family: var(--mono); font-weight: 700; }
+.home-search {
+  width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  padding: 11px 12px 11px 28px; color: var(--txt); font-family: var(--mono); font-size: 13px; outline: none;
+}
+.home-search:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px rgba(52,211,153,.12); }
+
+.cat-head { display: flex; align-items: center; gap: 10px; padding: 18px 18px 10px; }
+.cat-head .ch-label { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+.cat-head .ch-rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+.cat-head .ch-count { font-family: var(--mono); font-size: 10px; color: var(--txt-faint); }
+
+.springboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 6px; padding: 2px 14px; }
+@media (min-width: 480px) { .springboard { grid-template-columns: repeat(5, 1fr); } }
+.app-tile { display: flex; flex-direction: column; align-items: center; gap: 7px; cursor: pointer; min-height: 44px; }
+.app-tile .at-ico {
+  width: 60px; height: 60px; border-radius: 17px; display: grid; place-items: center; font-size: 29px; position: relative;
+  background: linear-gradient(155deg, var(--bg-3), var(--bg-1) 70%);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 5px 16px -10px #000;
+  transition: transform .12s ease, border-color .12s, box-shadow .12s;
+}
+.app-tile .at-ico > span { filter: drop-shadow(0 0 6px rgba(0,0,0,.5)); }
+.app-tile .at-ico::after {
+  content: ""; position: absolute; inset: 7px; border-radius: 11px; opacity: 0; transition: opacity .15s;
+  background:
+    linear-gradient(var(--accent),var(--accent)) 0 0/9px 1.5px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) 0 0/1.5px 9px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) 100% 100%/9px 1.5px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) 100% 100%/1.5px 9px no-repeat;
+}
+.app-tile:active .at-ico { transform: scale(.88); border-color: var(--accent-dim); box-shadow: 0 0 0 2px rgba(52,211,153,.3), 0 0 22px -4px var(--accent); }
+.app-tile:active .at-ico::after { opacity: .55; }
+.app-tile .at-name {
+  font-size: 10.5px; color: var(--txt-dim); text-align: center; line-height: 1.15; max-width: 76px;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.home-empty { text-align: center; color: var(--txt-faint); font-family: var(--mono); padding: 48px 0; }
+
+/* ---- PAGER (swipe between opened tools) ---- */
+.pager-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 12px 8px; }
+.pgr-back {
+  display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; font-weight: 600;
+  background: var(--bg-2); border: 1px solid var(--line); color: var(--accent); border-radius: 999px;
+  padding: 8px 14px; min-height: 38px; cursor: pointer; white-space: nowrap;
+}
+.pgr-back:active { transform: scale(.95); border-color: var(--accent-dim); }
+.pgr-title { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pgr-prog { flex: none; height: 2px; background: var(--bg-2); margin: 0 12px 6px; border-radius: 2px; overflow: hidden; }
+.pgr-prog > i { display: block; height: 100%; width: 0; background: var(--accent); box-shadow: 0 0 6px var(--accent); transition: width .2s; }
 
 .pager {
   flex: 1; display: flex; overflow-x: auto; overflow-y: hidden;
@@ -276,46 +347,33 @@ body[data-mode="ios"] #app.desktop { display: none; }
 .pager::-webkit-scrollbar { display: none; }
 .page {
   flex: 0 0 100%; width: 100%; height: 100%; scroll-snap-align: center;
-  overflow-y: auto; padding: 16px 16px 24px; -webkit-overflow-scrolling: touch;
+  overflow-y: auto; padding: 14px 16px 28px; -webkit-overflow-scrolling: touch;
 }
 
 /* generic ios scroll list (library / reports / settings) */
 .ios-scroll { flex: 1; overflow-y: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+.ios-sechead { font-family: var(--mono); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); padding: 2px 2px 12px; }
 
-.ios-card {
-  border: 1px solid var(--line); border-radius: 16px; background: var(--bg-1);
-  padding: 18px; margin-bottom: 14px;
-}
+.ios-card { border: 1px solid var(--line); border-radius: 16px; background: var(--bg-1); padding: 18px; margin-bottom: 14px; }
 .ios-card .ic-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.ios-card .ic-ico {
-  width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
-  font-size: 24px; background: var(--bg-2); border: 1px solid var(--line); flex: none;
-}
+.ios-card .ic-ico { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; background: var(--bg-2); border: 1px solid var(--line); flex: none; }
 .ios-card .ic-name { font-size: 17px; font-weight: 650; }
 .ios-card .ic-sub { font-size: 12px; color: var(--txt-dim); }
 .ios-card .ic-desc { font-size: 13px; color: var(--txt-dim); line-height: 1.5; }
 .ios-card .ic-feat { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
-.ios-card .ic-feat span {
-  font-size: 11px; font-family: var(--mono); padding: 5px 10px; border-radius: 8px;
-  background: var(--bg-3); border: 1px solid var(--line-soft); color: var(--txt-dim);
-}
-.ios-card .ic-open {
-  margin-top: 16px; width: 100%; min-height: 46px; border-radius: 12px;
-  background: var(--bg-3); border: 1px solid var(--line); color: var(--txt-dim);
-  font-size: 14px; display: grid; place-items: center; cursor: pointer;
-}
+.ios-card .ic-feat span { font-size: 11px; font-family: var(--mono); padding: 5px 10px; border-radius: 8px; background: var(--bg-3); border: 1px solid var(--line-soft); color: var(--txt-dim); }
 
 /* iOS bottom tab bar */
-.ios-tabbar {
-  flex: none; display: flex; border-top: 1px solid var(--line); background: var(--bg-1);
-  padding-bottom: var(--safe-b);
-}
+.ios-tabbar { flex: none; display: flex; border-top: 1px solid var(--line); background: linear-gradient(0deg, var(--bg-1), rgba(15,21,19,.7)); padding-bottom: var(--safe-b); }
 .ios-tab {
   flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 3px; color: var(--txt-faint); cursor: pointer; font-size: 10px; letter-spacing: .02em;
+  gap: 3px; color: var(--txt-faint); cursor: pointer; font-size: 10px; letter-spacing: .04em; position: relative;
+  font-family: var(--mono); text-transform: uppercase;
 }
-.ios-tab .tb-ico { font-size: 20px; line-height: 1; }
+.ios-tab .tb-ico { font-size: 19px; line-height: 1; }
 .ios-tab.active { color: var(--accent); }
+.ios-tab.active::before { content: ""; position: absolute; top: 0; left: 30%; right: 30%; height: 2px; background: var(--accent); box-shadow: 0 0 8px var(--accent); border-radius: 2px; }
+.ios-tab:active { background: var(--bg-2); }
 
 /* ============================================================ TOAST / BANNER */
 #banner {
@@ -472,23 +530,35 @@ body[data-mode="ios"] #app.desktop { display: none; }
 
 <!-- ===================== iOS APP ===================== -->
 <div id="app" class="ios">
-  <header class="ios-topbar">
-    <div class="brand">FREAK<span>::</span>SPLOIT</div>
-    <div class="spacer"></div>
-    <div class="it-screen" id="iosScreenLabel"></div>
-  </header>
+  <div class="ios-statusbar">
+    <span class="sb-brand">FREAK<span>::</span>SPLOIT</span>
+    <span class="sb-right"><span class="dot green"></span><span id="iosClock">--:--</span></span>
+  </div>
 
   <div class="ios-stage" id="iosStage">
-    <!-- Tools (swipe pager) -->
-    <section class="ios-section active" data-sec="tools">
-      <div class="swipe-dots" id="iosDots"></div>
+    <!-- Home: springboard / app grid (landing view) -->
+    <section class="ios-section active" data-sec="home">
+      <div class="home-scroll">
+        <div class="home-head">
+          <div class="home-title">ARSENAL</div>
+          <div class="home-sub" id="iosCount"></div>
+          <div class="home-search-wrap"><input class="home-search" id="iosSearch" placeholder="search the arsenal…" spellcheck="false" autocapitalize="off" autocomplete="off"></div>
+        </div>
+        <div id="iosGrid"></div>
+      </div>
+    </section>
+    <!-- Pager: swipe between opened tools -->
+    <section class="ios-section" data-sec="pager">
+      <div class="pager-bar">
+        <button class="pgr-back" id="iosBack">⊞ Apps</button>
+        <div class="pgr-title" id="iosScreenLabel"></div>
+      </div>
+      <div class="pgr-prog"><i id="iosPgrFill"></i></div>
       <div class="pager" id="iosPager"></div>
     </section>
-    <!-- Library -->
+    <!-- Library / Reports / Settings -->
     <section class="ios-section" data-sec="library"><div class="ios-scroll" id="iosLibrary"></div></section>
-    <!-- Reports -->
     <section class="ios-section" data-sec="reports"><div class="ios-scroll" id="iosReports"></div></section>
-    <!-- Settings -->
     <section class="ios-section" data-sec="settings"><div class="ios-scroll" id="iosSettings"></div></section>
   </div>
 
@@ -4503,103 +4573,130 @@ const DesktopUI = (() => {
  * --------------------------------------------------------------------- */
 const IOSUI = (() => {
   let tools = [];            // universal only
-  let pageIndex = 0;
+  let pageIndex = 0, pagerBuilt = false;
 
   const TABS = [
-    { sec:"tools",    icon:"🧰", label:"Tools" },
+    { sec:"home",     icon:"⊞", label:"Apps" },
     { sec:"library",  icon:"📚", label:"Library" },
     { sec:"reports",  icon:"📝", label:"Reports" },
     { sec:"settings", icon:"⚙️", label:"Settings" },
   ];
+  const CAT_ORDER = ["Recon", "Web", "Offense", "Crypto", "Output"];
 
+  /* ---- springboard / app grid ---- */
+  function tile(t) {
+    return el("div", { class: "app-tile", onclick: () => openApp(t) },
+      el("div", { class: "at-ico" }, el("span", {}, t.icon)),
+      el("div", { class: "at-name" }, t.name));
+  }
+  function renderGrid(query = "") {
+    const grid = $("#iosGrid"); grid.innerHTML = "";
+    const q = query.trim().toLowerCase();
+    const match = t => !q || t.name.toLowerCase().includes(q) || t.cat.toLowerCase().includes(q) || (t.desc || "").toLowerCase().includes(q);
+    const cats = [...new Set(tools.map(t => t.cat))].sort((a, b) => {
+      const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    let any = false;
+    for (const cat of cats) {
+      const items = tools.filter(t => t.cat === cat && match(t));
+      if (!items.length) continue; any = true;
+      grid.appendChild(el("div", { class: "cat-head" },
+        el("span", { class: "ch-label" }, cat), el("span", { class: "ch-rule" }), el("span", { class: "ch-count" }, String(items.length))));
+      const wrap = el("div", { class: "springboard" });
+      items.forEach(t => wrap.appendChild(tile(t)));
+      grid.appendChild(wrap);
+    }
+    if (!any) grid.appendChild(el("div", { class: "home-empty" }, "no tools match “" + query + "”"));
+  }
+
+  /* ---- swipe pager (lazy-mounted tool screens) ---- */
   function buildPager() {
     const pager = $("#iosPager");
-    const dots = $("#iosDots");
-    pager.innerHTML = ""; dots.innerHTML = "";
-    tools.forEach((t, i) => {
-      pager.appendChild(toolPage(t));
-      dots.appendChild(el("i", { class: i === 0 ? "on" : "" }));
-    });
+    pager.innerHTML = "";
+    tools.forEach((t, i) => pager.appendChild(el("div", { class: "page", "data-i": i })));
     pager.addEventListener("scroll", () => {
       const idx = Math.round(pager.scrollLeft / pager.clientWidth);
-      if (idx !== pageIndex) { pageIndex = idx; syncDots(); syncLabel(); }
+      if (idx !== pageIndex && idx >= 0 && idx < tools.length) { pageIndex = idx; ensureAround(idx); syncBar(); }
     }, { passive: true });
-    syncLabel();
+    pagerBuilt = true;
   }
-  function syncDots() {
-    $$("#iosDots i").forEach((d, i) => d.classList.toggle("on", i === pageIndex));
-  }
-  function syncLabel() {
-    const t = tools[pageIndex];
-    $("#iosScreenLabel").textContent = t ? `${t.name} · ${pageIndex + 1}/${tools.length}` : "";
-  }
-  function toolPage(tool) {
-    return el("div", { class: "page" },
-      el("div", { class: "ios-card" },
-        el("div", { class: "ic-top" },
-          el("div", { class: "ic-ico" }, tool.icon),
-          el("div", {}, el("div", { class: "ic-name" }, tool.name), el("div", { class: "ic-sub" }, tool.cat + " · browser-native"))),
-        el("div", { class: "ic-desc" }, tool.desc),
-        el("div", { class: "ic-feat" }, ...(tool.feat || []).map(f => el("span", {}, f))),
-        el("div", { class: "ic-open", onclick: () => openTool(tool) }, "Open " + tool.name + " →")));
-  }
-  function openTool(tool) {
-    const page = $$("#iosPager .page")[pageIndex];
-    page.innerHTML = "";
-    page.appendChild(el("div", { class: "ios-back", onclick: () => { page.innerHTML = ""; page.appendChild(toolPage(tool).firstChild); } }, "← Tools"));
-    const impl = Impl[tool.id];
+  function ensureMounted(i) {
+    if (i < 0 || i >= tools.length) return;
+    const page = $$("#iosPager .page")[i];
+    if (!page || page.dataset.mounted) return;
+    page.dataset.mounted = "1";
+    const t = tools[i];
+    page.appendChild(el("div", { class: "tool-head", style: "margin-bottom:14px" },
+      el("div", { class: "t-ico" }, t.icon),
+      el("div", {}, el("h1", { style: "font-size:18px" }, t.name), el("p", {}, t.desc))));
+    const impl = Impl[t.id];
     if (impl) {
-      page.appendChild(el("div", { class: "tool-head", style: "margin-bottom:14px" },
-        el("div", { class: "t-ico" }, tool.icon),
-        el("div", {}, el("h1", { style: "font-size:18px" }, tool.name), el("p", {}, tool.desc))));
       const body = el("div", { class: "tool-body" });
       page.appendChild(body);
-      try { impl(body, tool); } catch (e) { body.appendChild(el("div", { class: "out err" }, "tool error: " + e.message)); }
+      try { impl(body, t); } catch (e) { body.appendChild(el("div", { class: "out err" }, "tool error: " + e.message)); }
     } else {
       page.appendChild(el("div", { class: "ios-card" },
-        el("div", { class: "ic-top" },
-          el("div", { class: "ic-ico" }, tool.icon),
-          el("div", {}, el("div", { class: "ic-name" }, tool.name), el("div", { class: "ic-sub" }, "module scaffold"))),
-        el("div", { class: "ic-desc" }, "🚧 The interface for this tool ships next."),
-        el("div", { class: "ic-feat" }, ...(tool.feat || []).map(f => el("span", {}, f)))));
+        el("div", { class: "ic-desc" }, "🚧 This tool isn't built yet — coming soon."),
+        el("div", { class: "ic-feat" }, ...(t.feat || []).map(f => el("span", {}, f)))));
     }
   }
+  function ensureAround(i) { [i - 1, i, i + 1].forEach(ensureMounted); }
+  function openApp(t) {
+    const i = tools.indexOf(t); if (i < 0) return;
+    pageIndex = i;
+    showSection("pager");
+    requestAnimationFrame(() => {
+      const pager = $("#iosPager");
+      pager.scrollLeft = i * pager.clientWidth;
+      ensureAround(i); syncBar();
+    });
+  }
+  function syncBar() {
+    const t = tools[pageIndex];
+    $("#iosScreenLabel").textContent = t ? t.name + " · " + (pageIndex + 1) + "/" + tools.length : "";
+    const fill = $("#iosPgrFill"); if (fill) fill.style.width = ((pageIndex + 1) / tools.length * 100) + "%";
+  }
 
+  /* ---- tabs / section routing ---- */
   function buildTabs() {
     const bar = $("#iosTabbar");
     bar.innerHTML = "";
-    TABS.forEach((tab, i) => {
-      bar.appendChild(el("div", { class: "ios-tab" + (i === 0 ? " active" : ""), "data-sec": tab.sec, onclick: () => showSection(tab.sec) },
-        el("span", { class: "tb-ico" }, tab.icon), el("span", {}, tab.label)));
-    });
+    TABS.forEach(tab => bar.appendChild(el("div", { class: "ios-tab", "data-sec": tab.sec, onclick: () => showSection(tab.sec) },
+      el("span", { class: "tb-ico" }, tab.icon), el("span", {}, tab.label))));
   }
   function showSection(sec) {
     $$(".ios-section").forEach(s => s.classList.toggle("active", s.dataset.sec === sec));
-    $$(".ios-tab").forEach(t => t.classList.toggle("active", t.dataset.sec === sec));
-    if (sec === "tools") syncLabel();
-    else $("#iosScreenLabel").textContent = TABS.find(t => t.sec === sec).label;
-  }
-
-  function simpleList(node, title, body) {
-    node.innerHTML = "";
-    node.appendChild(el("div", { class: "ios-card" },
-      el("div", { class: "ic-top" }, el("div", { class: "ic-name" }, title)),
-      el("div", { class: "ic-desc" }, body)));
+    const tabSec = sec === "pager" ? "home" : sec;   // pager is part of the Apps flow
+    $$(".ios-tab").forEach(t => t.classList.toggle("active", t.dataset.sec === tabSec));
   }
 
   function init(universalTools) {
     tools = universalTools;
+    renderGrid();
     buildPager();
     buildTabs();
-    mountSection($("#iosLibrary"), "payload-library");
-    mountSection($("#iosReports"), "report-builder");
-    renderSettings($("#iosSettings"), true);
+    showSection("home");
+    const cnt = $("#iosCount"); if (cnt) cnt.textContent = tools.length + " TOOLS · BROWSER-NATIVE · OFFLINE-CAPABLE";
+    $("#iosSearch").addEventListener("input", e => renderGrid(e.target.value));
+    $("#iosBack").addEventListener("click", () => showSection("home"));
+    mountSection($("#iosLibrary"), "payload-library", "Library");
+    mountSection($("#iosReports"), "report-builder", "Reports");
+    $("#iosSettings").innerHTML = ""; $("#iosSettings").appendChild(el("div", { class: "ios-sechead" }, "System / Settings"));
+    const sw = el("div", {}); $("#iosSettings").appendChild(sw); renderSettings(sw, true);
+    startClock();
   }
-  function mountSection(node, toolId) {
+  function mountSection(node, toolId, title) {
     node.innerHTML = "";
+    if (title) node.appendChild(el("div", { class: "ios-sechead" }, title));
     const body = el("div", { class: "tool-body" });
     node.appendChild(body);
     try { Impl[toolId](body, {}); } catch (e) { body.appendChild(el("div", { class: "out err" }, e.message)); }
+  }
+  function startClock() {
+    const c = $("#iosClock"); if (!c) return;
+    const tick = () => c.textContent = new Date().toTimeString().slice(0, 5);
+    tick(); setInterval(tick, 20000);
   }
   return { init, showSection };
 })();

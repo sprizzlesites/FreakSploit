@@ -4,6 +4,14 @@
 > `[ ]` item under "Build queue", and implement it. Update this file + commit
 > after each tool. This is the single source of truth across sessions.
 
+## ✅ iOS REDESIGN DONE (this session)
+Retro-HUD restyle of the iOS view. New landing = **springboard app grid**
+(`data-sec="home"`) grouped by category with live search; tapping a tile
+opens the **swipe pager** (`data-sec="pager"`, lazy-mounts tool ±1 so 74
+tools don't all build at once) with a **⊞ Apps back button** + progress
+bar. Status bar with live clock. Verified: home→tap→pager→back flow, no
+pageerrors. Screenshots: docs/ios-home.png, ios-tool.png, ios-search.png.
+
 ## ⏸️ HANDOFF — RESUME HERE (last session paused on request)
 **State:** index.html valid, all 4 Playwright suites GREEN
 (`PW_PATH=/opt/node22/lib/node_modules/playwright/index.js node test/<suite>.mjs`

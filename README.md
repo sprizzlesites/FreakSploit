@@ -8,7 +8,7 @@ CDN) and it runs. No build step, no bundler, no npm, no server-side compute.
 
 | Desktop (multi-pane IDE) | iOS (swipe + tabs) |
 |---|---|
-| ![Desktop overview](docs/desktop-overview.png) | ![iOS tools](docs/ios-tools.png) |
+| ![Desktop overview](docs/desktop-overview.png) | ![iOS springboard](docs/ios-home.png) |
 
 ## Status — Functional suite
 
