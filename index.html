@@ -1662,6 +1662,94 @@ DaemonImpl["packet-injector"] = (root) => {
     UIKit.panel("Result", null, o.node));
 };
 
+/* ===================== DAEMON: PACKET ANALYZER ===================== */
+DaemonImpl["packet-analyzer"] = (root) => {
+  const bpf = UIKit.field("BPF filter", { placeholder: "tcp port 443", mono: true });
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "#"), el("th", {}, "time"), el("th", {}, "source"), el("th", {}, "dest"), el("th", {}, "proto"), el("th", {}, "len"), el("th", {}, "info"))), tbody);
+  const detail = UIKit.out(); detail.set("select a packet to dissect");
+  let n = 0, capturing = false;
+  const PROTO_COLOR = { TCP: "ok", UDP: "k", DNS: "s", TLS: "warn", HTTP: "v", ICMP: "warn", ARP: "dim" };
+  RPC.on("packet.frame", (m) => {
+    if (!root.isConnected || !capturing) return;
+    n++;
+    const row = el("tr", {},
+      el("td", {}, String(n)), el("td", {}, m.ts || ""), el("td", {}, m.src || ""), el("td", {}, m.dst || ""),
+      el("td", { class: PROTO_COLOR[m.proto] || "" }, m.proto || "?"), el("td", {}, String(m.len || 0)), el("td", {}, (m.summary || "").slice(0, 60)));
+    row.addEventListener("click", () => {
+      $$("tr", tbody).forEach(r => r.style.background = "");
+      row.style.background = "var(--bg-3)";
+      detail.clear();
+      const layers = m.layers || { frame: m };
+      for (const [layer, fields] of Object.entries(layers)) {
+        detail.line("▸ " + layer, "k");
+        if (fields && typeof fields === "object") for (const [k, v] of Object.entries(fields)) detail.line("    " + k + ": " + v, "dim");
+      }
+    });
+    tbody.appendChild(row);
+    while (tbody.childElementCount > 500) tbody.removeChild(tbody.firstChild);
+  });
+  const start = () => { capturing = true; n = 0; tbody.innerHTML = ""; RPC.send("capture.start", { filter: bpf.input.value.trim() }); startBtn.textContent = "Stop capture"; };
+  const stop = () => { capturing = false; RPC.send("capture.stop"); startBtn.textContent = "Start capture"; };
+  const startBtn = UIKit.btn("Start capture", () => capturing ? stop() : start(), "primary");
+  root.append(
+    UIKit.panel("Capture", null, el("div", { class: "toolbar" }, bpf.wrap), el("div", { class: "row" }, startBtn, UIKit.btn("Clear", () => { tbody.innerHTML = ""; n = 0; }, "ghost"))),
+    UIKit.panel("Packets", null, el("div", { style: "max-height:300px;overflow:auto" }, tbl)),
+    UIKit.panel("Dissection", null, detail.node));
+};
+
+/* ===================== DAEMON: HTTP INTERCEPTOR ===================== */
+DaemonImpl["http-interceptor"] = (root) => {
+  let enabled = false, queue = [], sel = null;
+  const toggle = UIKit.btn("Intercept: OFF", () => { enabled = !enabled; toggle.textContent = "Intercept: " + (enabled ? "ON" : "OFF"); toggle.classList.toggle("primary", enabled); RPC.send("intercept.toggle", { enabled }); }, "");
+  const qWrap = el("div", {});
+  const method = UIKit.field("Method", { mono: true });
+  const url = UIKit.field("URL", { mono: true });
+  const headers = UIKit.area("Headers", {});
+  const body = UIKit.area("Body", {});
+  function renderQueue() {
+    qWrap.innerHTML = "";
+    if (!queue.length) { qWrap.appendChild(el("div", { class: "hint" }, "no intercepted requests")); return; }
+    queue.forEach(q => qWrap.appendChild(el("div", { class: "list-row", onclick: () => loadReq(q) },
+      el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, q.method + " " + (q.url || "").slice(0, 50)), el("div", { class: "lr-sub" }, "#" + q.id)))));
+  }
+  function loadReq(q) { sel = q; method.input.value = q.method || ""; url.input.value = q.url || ""; headers.input.value = (q.headers && Object.entries(q.headers).map(([k, v]) => k + ": " + v).join("\n")) || ""; body.input.value = q.body || ""; }
+  RPC.on("intercept.request", (m) => { if (!root.isConnected) return; queue.push(m); renderQueue(); });
+  const forward = () => { if (!sel) return; RPC.send("intercept.forward", { id: sel.id, method: method.input.value, url: url.input.value, headers: headers.input.value, body: body.input.value }); queue = queue.filter(q => q.id !== sel.id); sel = null; renderQueue(); };
+  const drop = () => { if (!sel) return; RPC.send("intercept.drop", { id: sel.id }); queue = queue.filter(q => q.id !== sel.id); sel = null; renderQueue(); };
+  const repeat = () => RPC.send("intercept.repeat", { method: method.input.value, url: url.input.value, headers: headers.input.value, body: body.input.value });
+  renderQueue();
+  root.append(
+    UIKit.panel("Proxy", null, el("div", { class: "row" }, toggle, el("span", { class: "hint" }, "daemon runs the intercepting proxy; configure your client to use it"))),
+    UIKit.panel("Intercept queue", null, qWrap),
+    UIKit.panel("Editor", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), headers.wrap, body.wrap,
+      el("div", { class: "row" }, UIKit.btn("Forward", forward, "primary"), UIKit.btn("Drop", drop), UIKit.btn("Send to repeater", repeat, "ghost"))));
+};
+
+/* ===================== DAEMON: EXPLOIT CONSOLE ===================== */
+DaemonImpl["exploit-console"] = (root) => {
+  const o = UIKit.out(); o.line("msf-style console — backed by daemon v86/CheerpX runtime", "dim"); o.line("type 'help' or 'search <term>'", "dim");
+  const cmd = UIKit.field("", { placeholder: "msf > search eternalblue", mono: true });
+  const sessWrap = el("div", {});
+  RPC.on(m => /^console\.|^session/.test(m.type || ""), (m) => {
+    if (!root.isConnected) return;
+    if (m.type === "console.out") o.line(m.text || "", m.level === "error" ? "err" : m.level === "good" ? "ok" : "");
+    else if (m.type === "sessions.list") {
+      sessWrap.innerHTML = "";
+      (m.sessions || []).forEach(s => sessWrap.appendChild(el("div", { class: "list-row" },
+        el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, "#" + s.id + " " + (s.type || "")), el("div", { class: "lr-sub" }, s.tunnel || s.target || "")),
+        UIKit.btn("Interact", () => { cmd.input.value = "sessions -i " + s.id; }, "ghost"))));
+      if (!(m.sessions || []).length) sessWrap.appendChild(el("div", { class: "hint" }, "no active sessions"));
+    }
+  });
+  const run = () => { const c = cmd.input.value.trim(); if (!c) return; o.line("msf > " + c, "k"); RPC.send("console.cmd", { cmd: c }); cmd.input.value = ""; };
+  cmd.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  RPC.send("sessions.list");
+  root.append(
+    UIKit.panel("Console", UIKit.btn("Refresh sessions", () => RPC.send("sessions.list"), "ghost"), o.node, el("div", { class: "row" }, cmd.wrap, UIKit.btn("Run", run, "primary"))),
+    UIKit.panel("Sessions", null, sessWrap));
+};
+
 /* ===================== SETTINGS (shared) ===================== */
 function renderSettings(node, isIOS) {
   node.innerHTML = "";

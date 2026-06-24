@@ -61,13 +61,13 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 ### Phase 4 — Daemon-connected tools (desktop, protocol UIs)
 > All driven by JSON messages over `ws://localhost:7373`. Render full UI;
 > actions no-op with a clear notice when offline (never on iOS).
-- [ ] Network Scanner (nmap config → /exec, render hosts/ports)
-- [ ] Packet Analyzer (pcap stream, packet list, dissection, BPF filter)
-- [ ] HTTP Interceptor (intercept queue, req/res editor, repeater)
-- [ ] Interface Manager (/interfaces enumerate, monitor-mode toggle)
-- [ ] Raw Packet Injector (layered packet craft → /inject)
-- [ ] Exploit Console (module search, options, sessions)
-- [ ] Remote Daemon Connector (custom ws URL, pair, persist)
+- [x] Network Scanner (nmap config → /exec, render hosts/ports)
+- [x] Packet Analyzer (pcap stream, packet list, dissection, BPF filter)
+- [x] HTTP Interceptor (intercept queue, req/res editor, repeater)
+- [x] Interface Manager (/interfaces enumerate, monitor-mode toggle)
+- [x] Raw Packet Injector (layered packet craft → /inject)
+- [x] Exploit Console (console cmd stream, sessions)
+- [x] Remote Daemon Connector (custom ws URL, pair, persist)
 
 ### Phase 5 — Polish
 - [ ] Command palette (⌘K) fuzzy tool/action search
@@ -85,4 +85,9 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   (JWT, Header Inspector, DNS Recon, HTTP Fuzzer, Subdomain Enum, Wordlist
   Builder, Payload Library, Hash Cracker, SSL Inspector, OSINT, Report
   Builder). iOS Library/Reports/Settings wired. MD5 verified vs vectors.
-  **Next up: Phase 4 — daemon-connected tools (Network Scanner first).**
+- **S1 (overnight cont.)**: Phase 4 DONE. All 7 daemon protocol UIs built
+  (Network Scanner, Packet Analyzer, HTTP Interceptor, Interface Manager,
+  Raw Packet Injector, Exploit Console, Remote Daemon Connector) over a
+  JSON RPC helper; gate mounts them when online. Boot uses saved ws URL.
+  **Next up: Phase 5 polish — command palette (⌘K) first, then history
+  viewer, shortcut help overlay, desktop Settings route, README refresh.**
