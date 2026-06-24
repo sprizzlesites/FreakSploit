@@ -35,7 +35,7 @@ async function page(url) {
 let p = await page(file + '?mode=desktop');
 console.log('DESKTOP navItems=' + await p.locator('#dSidebar .nav-item').count() + ' overviewCards=' + await p.locator('#dMain .card').count());
 
-const ids = ['http-fuzzer','header-inspector','dns-recon','subdomain-enum','jwt-analyzer','hash-cracker','password-gen','ssl-inspector','osint','payload-library','report-builder','secret-scanner','request-forge','ws-workbench','auth-lab','param-tamper','injection-tester','packet-analyzer','network-scanner','http-interceptor','exploit-console','interface-manager','packet-injector','remote-daemon','history','settings'];
+const ids = ['http-fuzzer','header-inspector','dns-recon','subdomain-enum','jwt-analyzer','hash-cracker','password-gen','ssl-inspector','osint','payload-library','report-builder','secret-scanner','request-forge','ws-workbench','auth-lab','param-tamper','injection-tester','idor-probe','cors-tester','api-discovery','packet-analyzer','network-scanner','http-interceptor','exploit-console','interface-manager','packet-injector','remote-daemon','history','settings'];
 let fails = 0;
 for (const id of ids) {
   await p.goto(file + '?mode=desktop#/' + id, { waitUntil: 'domcontentloaded' });

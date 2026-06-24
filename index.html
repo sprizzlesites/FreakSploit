@@ -591,6 +591,9 @@ const UNIVERSAL_TOOLS = [
   { id:"auth-lab",       name:"Auth / Token Lab",  icon:"🪪", cat:"Offense", desc:"Forge & tamper JWTs (alg:none, role→admin, resign), inject into requests and compare access.", feat:["alg:none","role escalation","token replay"] },
   { id:"param-tamper",   name:"Param / Price Tamper", icon:"🏷️", cat:"Offense", desc:"Auto-mutate price, quantity, role and id fields, replay, and flag when the server trusts client values.", feat:["price→0","role→admin","mass assignment"] },
   { id:"injection-tester", name:"Injection Tester", icon:"🧨", cat:"Offense", desc:"Probe params for SQLi / NoSQLi / SSTI / command injection with error, boolean, time-based and reflection detection.", feat:["SQLi","NoSQLi","SSTI","time-based"] },
+  { id:"idor-probe",     name:"IDOR / Access Probe", icon:"🎫", cat:"Offense", desc:"Enumerate neighbouring object IDs and compare authed vs unauthed responses to find broken access control.", feat:["id enum","authz diff","BOLA"] },
+  { id:"cors-tester",    name:"CORS Tester",       icon:"🌍", cat:"Offense", desc:"Detect exploitable CORS misconfigurations — wildcard, reflected origin and credentialed cross-origin access.", feat:["ACAO","credentials","reflection"] },
+  { id:"api-discovery",  name:"API / Endpoint Discovery", icon:"🗝️", cat:"Offense", desc:"Probe for exposed sensitive paths — .env, .git, source maps, swagger/OpenAPI and GraphQL introspection.", feat:[".env/.git","swagger","graphql introspection"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -2179,6 +2182,144 @@ Impl["injection-tester"] = (root) => {
     UIKit.panel("Target", null, el("div", { class: "toolbar" }, method.wrap, url.wrap), headers.wrap, bodyF.wrap, el("div", { class: "fld" }, el("label", {}, "Classes"), chips), el("div", { class: "row" }, UIKit.btn("Test injection", run, "primary"))),
     UIKit.panel("Log", null, o.node),
     UIKit.panel("Results", null, el("div", { style: "max-height:340px;overflow:auto" }, tbl)));
+};
+
+/* ===================== IDOR / ACCESS PROBE ===================== */
+function lastNumberOf(u) { const re = /\d+/g; let m, last = null; while ((m = re.exec(u))) last = m; return last; }
+Impl["idor-probe"] = (root) => {
+  const url = UIKit.field("URL with an object ID", { placeholder: "https://api.your-site.com/orders/1042", mono: true });
+  const auth = UIKit.field("Authorization header (optional)", { placeholder: "Bearer eyJ...", mono: true });
+  const span = UIKit.field("Neighbours each side", { type: "number", value: "5", min: "1", max: "50" });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "id"), el("th", {}, "status"), el("th", {}, "bytes"), el("th", {}, "note"))), tbody);
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    const ln = lastNumberOf(u);
+    if (!ln) return o.line("no numeric ID found in the URL", "warn");
+    const authHdr = auth.input.value.trim() ? "Authorization: " + auth.input.value.trim() : "";
+    const id0 = parseInt(ln[0], 10), n = clamp(+span.input.value || 5, 1, 50);
+    const mk = (id) => u.slice(0, ln.index) + id + u.slice(ln.index + ln[0].length);
+
+    // authz baseline: original id WITHOUT auth — should be 401/403 if protected
+    if (authHdr) {
+      try {
+        const noAuth = await HttpKit.send({ method: "GET", url: u });
+        o.line("unauth request to original: " + noAuth.status + (noAuth.status < 400 ? "  ⚠ object accessible without auth!" : "  ✓ requires auth"), noAuth.status < 400 ? "err" : "ok");
+      } catch (e) { o.line("unauth check failed: " + e.message, "dim"); }
+    }
+    o.line("enumerating ids " + (id0 - n) + "…" + (id0 + n) + (authHdr ? " (with your token)" : ""), "dim");
+    let accessible = 0;
+    for (let id = id0 - n; id <= id0 + n; id++) {
+      if (id < 0) continue;
+      try {
+        const r = await HttpKit.send({ method: "GET", url: mk(id), headers: authHdr });
+        const isYours = id === id0;
+        const ok = r.status < 400;
+        if (ok && !isYours) accessible++;
+        tbody.appendChild(el("tr", {}, el("td", {}, String(id) + (isYours ? " (yours)" : "")),
+          el("td", { class: ok ? "ok" : "warn" }, String(r.status)), el("td", {}, String(r.size)),
+          el("td", { class: ok && !isYours ? "sev-high" : "muted" }, ok && !isYours ? "⚠ accessible — possible IDOR" : ok ? "your object" : "denied")));
+      } catch (e) { /* skip */ }
+    }
+    o.line(""); o.line(accessible ? "⚠ " + accessible + " neighbouring object(s) returned 2xx — verify object-level authorization" : "no neighbouring objects accessible", accessible ? "err" : "ok");
+    History.add("IDOR Probe", u + " · " + accessible + " accessible neighbour(s)");
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "toolbar" }, auth.wrap, span.wrap), el("div", { class: "row" }, UIKit.btn("Probe", run, "primary"), el("span", { class: "hint" }, "varies the last number in the URL; tests with and without your token"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Results", null, el("div", { style: "max-height:340px;overflow:auto" }, tbl)));
+};
+
+/* ===================== CORS TESTER ===================== */
+Impl["cors-tester"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://api.your-site.com/data", value: "https://", mono: true });
+  const o = UIKit.out();
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a full URL", "err");
+    const myOrigin = location.origin && location.origin !== "null" ? location.origin : "null (file:// / sandbox)";
+    o.line("testing cross-origin reads as Origin: " + myOrigin, "dim");
+    o.line("(browsers hide the ACAO header from scripts, so this probes behaviour directly — not via the proxy)", "dim");
+    // 1. plain cross-origin read; 2. credentialed cross-origin read
+    let simpleOk = false, credOk = false, err = "";
+    try { const r = await fetch(u, { mode: "cors" }); if (r.type !== "opaque") { await r.text(); simpleOk = true; } }
+    catch (e) { err = e.message; }
+    try { const r = await fetch(u, { mode: "cors", credentials: "include" }); if (r.type !== "opaque") { await r.text(); credOk = true; } }
+    catch (e) {}
+    o.line(""); o.line("BEHAVIOURAL CORS TEST", "k");
+    o.line("cross-origin read (no creds)   : " + (simpleOk ? "ALLOWED" : "blocked"), simpleOk ? "warn" : "ok");
+    o.line("credentialed cross-origin read : " + (credOk ? "ALLOWED" : "blocked"), credOk ? "err" : "ok");
+    o.line(""); o.line("VERDICT", "k");
+    if (credOk) o.line("✗ CRITICAL: server allows CREDENTIALED cross-origin reads from " + myOrigin + " (reflected origin + Allow-Credentials). Any site can read a logged-in victim's data.", "err");
+    else if (simpleOk) o.line("⚠ server allows cross-origin reads from your origin (wildcard or reflected ACAO). Exposes non-credentialed responses to any site.", "warn");
+    else o.line("✓ cross-origin reads blocked from " + myOrigin + (err ? " (" + err + ")" : "") + " — not exploitable from a browser here.", "ok");
+    if (!credOk && !simpleOk) o.line("note: a fixed allowlist for OTHER origins won't surface here — this tests your origin specifically.", "dim");
+    History.add("CORS Tester", u + " · simple=" + simpleOk + " creds=" + credOk);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Test CORS", run, "primary"), el("span", { class: "hint" }, "reflection is detected when the server echoes your browser's Origin"))),
+    UIKit.panel("Report", null, o.node));
+  url.input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+};
+
+/* ===================== API / ENDPOINT DISCOVERY ===================== */
+const DISCOVERY_PATHS = [
+  ".env", ".git/HEAD", ".git/config", ".gitignore", "config.json", "config.js", "package.json",
+  "composer.json", "swagger.json", "openapi.json", "api-docs", "v2/api-docs", "robots.txt",
+  "sitemap.xml", ".well-known/security.txt", ".DS_Store", "backup.zip", "backup.sql", "db.sqlite",
+  "phpinfo.php", "wp-config.php.bak", ".env.local", ".env.production", "server-status",
+  "actuator", "actuator/health", "actuator/env", "debug", "admin", "metrics", ".vscode/settings.json",
+];
+Impl["api-discovery"] = (root) => {
+  const base = UIKit.field("Base URL", { placeholder: "https://your-site.com", value: "https://", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "path"), el("th", {}, "status"), el("th", {}, "bytes"), el("th", {}, "note"))), tbody);
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    let root_ = base.input.value.trim();
+    if (!/^https?:\/\//.test(root_)) return o.line("enter a full base URL", "err");
+    if (!root_.endsWith("/")) root_ += "/";
+    o.line("probing " + DISCOVERY_PATHS.length + " paths + GraphQL introspection…", "dim");
+    let found = 0;
+    const pool = makePool();
+    await pool.run(DISCOVERY_PATHS, 6, async (path) => {
+      try {
+        const r = await HttpKit.send({ method: "GET", url: root_ + path });
+        let note = "", sev = "muted";
+        if (r.status < 400 && r.size > 0) {
+          found++;
+          if (path === ".env" && /^[A-Z0-9_]+=/m.test(r.text)) { note = "⚠ .env contents exposed!"; sev = "sev-crit"; }
+          else if (path.startsWith(".git") && /ref:|repositoryformatversion/.test(r.text)) { note = "⚠ exposed .git repo"; sev = "sev-crit"; }
+          else if (/swagger|openapi|api-docs/.test(path)) { note = "API schema exposed"; sev = "sev-med"; }
+          else if (path === ".DS_Store" || path.includes("backup") || path.includes(".bak") || path.endsWith(".sql") || path.endsWith(".sqlite")) { note = "⚠ sensitive file"; sev = "sev-high"; }
+          else if (/actuator\/env|phpinfo|server-status|metrics/.test(path)) { note = "⚠ info disclosure"; sev = "sev-high"; }
+          else { note = "accessible"; sev = "sev-low"; }
+          tbody.appendChild(el("tr", {}, el("td", {}, path), el("td", { class: "ok" }, String(r.status)), el("td", {}, String(r.size)), el("td", { class: sev }, note)));
+        }
+      } catch (e) { /* skip */ }
+    });
+    // GraphQL introspection
+    for (const gp of ["graphql", "api/graphql", "v1/graphql"]) {
+      try {
+        const r = await HttpKit.send({ method: "POST", url: root_ + gp, headers: "Content-Type: application/json", body: JSON.stringify({ query: "{__schema{types{name}}}" }) });
+        if (r.status < 400 && /__schema|"types"|queryType/.test(r.text)) {
+          found++;
+          tbody.appendChild(el("tr", {}, el("td", {}, gp), el("td", { class: "ok" }, String(r.status)), el("td", {}, String(r.size)), el("td", { class: "sev-high" }, "⚠ GraphQL introspection enabled")));
+        }
+      } catch (e) { /* skip */ }
+    }
+    o.line(""); o.line(found ? "⚠ " + found + " path(s) responded — review exposed files/endpoints" : "no common sensitive paths exposed", found ? "err" : "ok");
+    History.add("API Discovery", base.input.value.trim() + " · " + found + " hit(s)");
+  };
+  root.append(
+    UIKit.panel("Target", null, base.wrap, el("div", { class: "row" }, UIKit.btn("Discover", run, "primary"), el("span", { class: "hint" }, "checks for leaked .env/.git, schemas, backups and GraphQL introspection"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Exposed", null, el("div", { style: "max-height:360px;overflow:auto" }, tbl)));
 };
 
 /* ===================== HISTORY (shared) ===================== */

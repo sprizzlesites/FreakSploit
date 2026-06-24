@@ -40,6 +40,12 @@ HTTP/WebSocket layer (no native deps):
   server trusts client values (broken object-level authz / mass assignment)
 - **Injection Tester** — SQLi/NoSQLi/SSTI/cmd with error, time-based and
   reflection detection
+- **IDOR / Access Probe** — enumerate neighbouring object IDs and diff
+  authed vs unauthed responses (broken object-level authorization)
+- **CORS Tester** — behavioural detection of exploitable CORS (wildcard,
+  reflected origin, credentialed cross-origin reads)
+- **API / Endpoint Discovery** — probe for exposed `.env` / `.git`, source
+  maps, swagger/OpenAPI and GraphQL introspection
 
 > **Boundary:** raw L2/L3 packet capture/injection (pcap, ARP, monitor mode)
 > is impossible from a browser and lives in the desktop daemon tier. The iOS

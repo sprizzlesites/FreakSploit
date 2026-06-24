@@ -74,6 +74,70 @@ const b = await chromium.launch();
   await p.close(); srv.close();
 }
 
+/* --- IDOR / Access Probe --- */
+{
+  const srv = http.createServer((req, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.end('{"order":"' + req.url + '"}'); });
+  await new Promise(r => srv.listen(0, r));
+  const base = 'http://localhost:' + srv.address().port + '/orders/5';
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/idor-probe', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(base);
+  await p.locator('#dMain').getByText('Probe', { exact: true }).click();
+  await p.waitForTimeout(1500);
+  const notes = await p.locator('#dMain table.tbl tbody tr td:nth-child(4)').allInnerTexts();
+  const idor = notes.some(s => /accessible — possible IDOR/.test(s));
+  console.log('IDOR Probe: neighbour access flagged=' + idor);
+  if (!idor) fails++;
+  await p.close(); srv.close();
+}
+
+/* --- CORS Tester (reflected origin + credentials) --- */
+{
+  const srv = http.createServer((req, res) => {
+    const origin = req.headers.origin || 'null';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.end('{}');
+  });
+  await new Promise(r => srv.listen(0, r));
+  const base = 'http://localhost:' + srv.address().port + '/data';
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/cors-tester', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(base);
+  await p.locator('#dMain').getByText('Test CORS', { exact: true }).click();
+  await p.waitForTimeout(1200);
+  const report = await p.locator('#dMain .out').last().innerText();
+  const cors = /CRITICAL|reflects the requesting Origin|allows 'null'/.test(report);
+  console.log('CORS Tester: misconfig flagged=' + cors);
+  if (!cors) fails++;
+  await p.close(); srv.close();
+}
+
+/* --- API / Endpoint Discovery --- */
+{
+  const srv = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.url === '/.env') return res.end('SECRET_KEY=supersecret\nDB_PASS=hunter2');
+    if (req.url === '/.git/HEAD') return res.end('ref: refs/heads/main');
+    res.statusCode = 404; res.end('nope');
+  });
+  await new Promise(r => srv.listen(0, r));
+  const base = 'http://localhost:' + srv.address().port + '/';
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/api-discovery', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(base);
+  await p.locator('#dMain').getByText('Discover', { exact: true }).click();
+  await p.waitForTimeout(2500);
+  const paths = await p.locator('#dMain table.tbl tbody tr td:first-child').allInnerTexts();
+  const disc = paths.includes('.env') && paths.includes('.git/HEAD');
+  console.log('API Discovery: found .env + .git/HEAD=' + disc + ' (' + JSON.stringify(paths) + ')');
+  if (!disc) fails++;
+  await p.close(); srv.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ')' : 'PASS — Offense tools detect planted issues'));
 process.exit(fails ? 1 : 0);

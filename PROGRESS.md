@@ -63,9 +63,9 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Auth / Token Lab (JWT forge: alg:none, role→admin, resign + replay test)
 - [x] Param / Price Tamper (auto price/qty/role/id mutation + acceptance flag)
 - [x] Injection Tester (SQLi/NoSQLi/SSTI/cmd; error/time/reflection detection)
-- [ ] IDOR / Access probe (enumerate IDs, compare auth vs unauth) — backlog
-- [ ] CORS exploitability tester (reflected origin + credentials) — backlog
-- [ ] API/endpoint discovery (.env/.git/sourcemaps/swagger/GraphQL) — backlog
+- [x] IDOR / Access probe (enumerate IDs, compare auth vs unauth)
+- [x] CORS exploitability tester (behavioural: simple vs credentialed reads)
+- [x] API/endpoint discovery (.env/.git/sourcemaps/swagger/GraphQL introspection)
 
 ### Phase 3 — iOS section screens
 - [x] Library section → live Payload Library
@@ -101,10 +101,11 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 ---
 
 ## Backlog / next up (when user says "continue")
-1. Offense backlog: IDOR/Access probe, CORS exploit tester, API/endpoint
-   discovery (.env/.git/sourcemaps/swagger/GraphQL introspection).
-2. Optional standalone sw.js for full offline navigation.
-3. Command-palette actions (run/copy), not just navigation.
+1. Optional standalone sw.js for full offline navigation.
+2. Command-palette actions (run/copy), not just navigation.
+3. iOS: surface History/recent runs per tool inside the swipe cards.
+4. Possible deeper tools: request smuggling probe, JWT kid/jku injection,
+   prototype-pollution probe, open-redirect scanner.
 
 ## Session log
 - **S1**: Foundation shell shipped (Phase 0). Committed.
@@ -142,3 +143,9 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   tools; 26 desktop routes; smoke test green; iOS still daemon-free.
   Honest boundary: raw L2/L3 packet work isn't browser-possible, stays in
   the daemon tier — these operate at the HTTP/WS layer via the CORS proxy.
+- **S2 (cont.)**: Finished the Offense backlog — IDOR/Access Probe,
+  CORS Tester (rewritten to behavioural detection: browsers hide the ACAO
+  header, so it probes simple vs credentialed cross-origin reads directly,
+  bypassing the proxy), API/Endpoint Discovery (.env/.git/swagger/GraphQL
+  introspection). iOS pager now 20 tools; 29 desktop routes; smoke green.
+  Extended test/offense.mjs with 3 functional scenarios — all 5 PASS.
