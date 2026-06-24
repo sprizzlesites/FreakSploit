@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="boot">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0a0e0d" />
+<meta name="description" content="FreakSploit — single-file, zero-install browser pentesting & developer suite." />
+<title>FreakSploit</title>
+<!--
+  FreakSploit — single-file static HTML developer/pentest suite.
+  Foundation shell:
+    1. Platform detection & capability tiers
+    2. Desktop multi-pane layout + iOS swipe layout
+    3. Tool routing
+    4. Daemon WebSocket connection manager (reconnect + status)
+    5. Stub tool cards for both modes
+  Constraints honoured: single file, no framework, no build step, vanilla JS,
+  IndexedDB persistence, service worker (blob) offline shell, conditional
+  desktop-module loading (desktop tool factories are never invoked on iOS).
+-->
+<style>
+/* ============================================================ DESIGN TOKENS */
+:root {
+  --bg:            #0a0e0d;
+  --bg-1:          #0f1513;
+  --bg-2:          #141b19;
+  --bg-3:          #1b2421;
+  --panel:         #0d1211;
+  --line:          #1f2b27;
+  --line-soft:     #19211e;
+  --txt:           #cfe8df;
+  --txt-dim:       #7f9c92;
+  --txt-faint:     #4f635c;
+  --accent:        #34d399;   /* available / online  (green) */
+  --accent-dim:    #1f8e68;
+  --amber:         #f5a524;   /* daemon required, missing      */
+  --red:           #f4516c;   /* error / offline               */
+  --cyan:          #38bdf8;   /* info / links                  */
+  --violet:        #a78bfa;
+  --glow:          0 0 0 1px var(--accent-dim), 0 0 18px -6px var(--accent);
+  --mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --r: 10px;
+  --sidebar-w: 232px;
+  --term-h: 200px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+::selection { background: var(--accent-dim); color: #04110c; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+code, kbd, .mono { font-family: var(--mono); }
+kbd {
+  font-family: var(--mono); font-size: 11px; background: var(--bg-3);
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+  padding: 1px 5px; color: var(--txt-dim);
+}
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* status dot helper */
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.green { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.dot.red   { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+.dot.gray  { background: var(--txt-faint); }
+.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* badges */
+.badge {
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; font-weight: 600;
+  border: 1px solid var(--line); color: var(--txt-dim); white-space: nowrap;
+}
+.badge.ok    { color: var(--accent); border-color: var(--accent-dim); background: rgba(52,211,153,.08); }
+.badge.amber { color: var(--amber);  border-color: rgba(245,165,36,.4); background: rgba(245,165,36,.08); }
+
+/* ============================================================ BOOT SCREEN */
+#boot {
+  position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center;
+  background: radial-gradient(120% 120% at 50% 0%, #0c1411 0%, #060807 70%);
+  color: var(--txt);
+}
+#boot .b-inner { text-align: center; }
+#boot .b-logo {
+  font-family: var(--mono); font-weight: 700; font-size: 30px; letter-spacing: .12em;
+  color: var(--accent); text-shadow: 0 0 22px rgba(52,211,153,.55);
+}
+#boot .b-logo span { color: var(--txt-faint); }
+#boot .b-status { margin-top: 14px; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); min-height: 16px; }
+#boot .b-bar { margin: 18px auto 0; width: 220px; height: 3px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
+#boot .b-bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+body[data-mode="desktop"] #boot, body[data-mode="ios"] #boot { display: none; }
+
+/* ============================================================ APP ROOT */
+#app { display: none; height: 100%; }
+body[data-mode="desktop"] #app.desktop { display: grid; }
+body[data-mode="ios"] #app.ios { display: flex; }
+body[data-mode="desktop"] #app.ios,
+body[data-mode="ios"] #app.desktop { display: none; }
+
+/* ============================================================ DESKTOP LAYOUT */
+#app.desktop {
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: 44px 1fr auto;
+  grid-template-areas:
+    "top    top"
+    "side   main"
+    "side   term";
+  height: 100%;
+}
+.d-topbar {
+  grid-area: top; display: flex; align-items: center; gap: 14px;
+  padding: 0 14px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--bg-1), var(--bg));
+}
+.d-topbar .brand { font-family: var(--mono); font-weight: 700; letter-spacing: .08em; color: var(--accent); }
+.d-topbar .brand span { color: var(--txt-faint); }
+.d-topbar .spacer { flex: 1; }
+.d-topbar .tb-item {
+  display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--txt-dim);
+  padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-1);
+  cursor: pointer; user-select: none;
+}
+.d-topbar .tb-item:hover { border-color: var(--accent-dim); color: var(--txt); }
+
+.d-sidebar {
+  grid-area: side; border-right: 1px solid var(--line); background: var(--panel);
+  overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column;
+}
+.nav-group-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--txt-faint);
+  padding: 14px 16px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px; margin: 1px 8px;
+  border-radius: 8px; cursor: pointer; color: var(--txt-dim); font-size: 13px;
+  border: 1px solid transparent; position: relative;
+}
+.nav-item:hover { background: var(--bg-2); color: var(--txt); }
+.nav-item.active { background: var(--bg-3); color: var(--txt); border-color: var(--line); }
+.nav-item.active::before {
+  content:""; position:absolute; left:-8px; top:18%; bottom:18%; width:3px;
+  background: var(--accent); border-radius: 3px;
+}
+.nav-item .ico { width: 18px; text-align: center; font-size: 14px; flex: none; }
+.nav-item .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item .req { font-size: 9px; }
+.sidebar-foot { margin-top: auto; padding: 10px 14px; border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--txt-faint); }
+
+.d-main { grid-area: main; overflow-y: auto; padding: 20px 24px 28px; }
+
+/* integrated terminal panel */
+.d-term {
+  grid-area: term; height: var(--term-h); border-top: 1px solid var(--line);
+  background: #070b0a; display: flex; flex-direction: column;
+}
+.d-term .t-head {
+  display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft); font-size: 11px; color: var(--txt-dim);
+  font-family: var(--mono);
+}
+.d-term .t-head .t-tab { padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+.d-term .t-head .t-tab.active { background: var(--bg-3); color: var(--txt); }
+.d-term .t-head .spacer { flex: 1; }
+.d-term .t-body { flex: 1; overflow-y: auto; padding: 8px 12px; font-family: var(--mono); font-size: 12px; }
+.d-term .log-line { white-space: pre-wrap; word-break: break-word; padding: 1px 0; color: var(--txt-dim); }
+.d-term .log-line .ts { color: var(--txt-faint); }
+.d-term .log-line.ok   { color: var(--accent); }
+.d-term .log-line.warn { color: var(--amber); }
+.d-term .log-line.err  { color: var(--red); }
+.d-term .log-line.in   { color: var(--cyan); }
+.d-term.collapsed { height: 30px; }
+.d-term.collapsed .t-body { display: none; }
+
+/* ============================================================ TOOL VIEW (shared content) */
+.tool-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.tool-head .t-ico {
+  width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+  font-size: 22px; background: var(--bg-2); border: 1px solid var(--line); flex: none;
+}
+.tool-head h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+.tool-head p { margin: 4px 0 0; color: var(--txt-dim); font-size: 13px; max-width: 60ch; }
+.tool-head .meta { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+.stub-panel {
+  border: 1px dashed var(--line); border-radius: var(--r); background: var(--bg-1);
+  padding: 26px; text-align: center; color: var(--txt-dim); margin-top: 8px;
+}
+.stub-panel .s-ico { font-size: 30px; opacity: .5; }
+.stub-panel h3 { margin: 10px 0 4px; color: var(--txt); font-weight: 600; }
+.stub-panel .s-feat { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.stub-panel .s-feat span {
+  font-size: 11px; font-family: var(--mono); padding: 4px 9px; border-radius: 6px;
+  background: var(--bg-3); border: 1px solid var(--line-soft); color: var(--txt-dim);
+}
+
+/* daemon-gated overlay (desktop tools when offline) */
+.gate {
+  margin-top: 14px; border: 1px solid rgba(245,165,36,.35); background: rgba(245,165,36,.06);
+  border-radius: var(--r); padding: 16px; display: flex; gap: 12px; align-items: center;
+}
+.gate .g-ico { font-size: 20px; }
+.gate .g-txt { flex: 1; }
+.gate .g-txt b { color: var(--amber); }
+.gate .g-txt small { display: block; color: var(--txt-dim); margin-top: 2px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 13px; font-size: 13px; color: var(--txt); white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent-dim); }
+.btn.primary { background: var(--accent); color: #04110c; border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; }
+
+/* desktop tool dashboard grid (overview screen) */
+.grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.card {
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-1);
+  padding: 14px; cursor: pointer; transition: border-color .15s, transform .12s;
+  display: flex; flex-direction: column; gap: 6px; position: relative; min-height: 104px;
+}
+.card:hover { border-color: var(--accent-dim); transform: translateY(-1px); }
+.card .c-top { display: flex; align-items: center; gap: 10px; }
+.card .c-ico { font-size: 20px; }
+.card .c-name { font-weight: 600; font-size: 14px; flex: 1; }
+.card .c-desc { font-size: 12px; color: var(--txt-dim); line-height: 1.4; }
+.card .c-foot { margin-top: auto; display: flex; align-items: center; gap: 6px; padding-top: 8px; }
+.section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--txt-faint); margin: 22px 0 10px; }
+.section-title:first-child { margin-top: 0; }
+
+/* ============================================================ iOS LAYOUT */
+#app.ios { flex-direction: column; height: 100%; padding-top: var(--safe-t); }
+.ios-topbar {
+  height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 16px;
+  border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none;
+}
+.ios-topbar .brand { font-family: var(--mono); font-weight: 700; letter-spacing: .06em; color: var(--accent); font-size: 16px; }
+.ios-topbar .brand span { color: var(--txt-faint); }
+.ios-topbar .spacer { flex: 1; }
+.ios-topbar .it-screen { font-size: 13px; color: var(--txt-dim); }
+
+/* horizontal swipe pager */
+.ios-stage { flex: 1; position: relative; overflow: hidden; }
+.ios-section { position: absolute; inset: 0; display: none; flex-direction: column; }
+.ios-section.active { display: flex; }
+
+.swipe-dots { display: flex; gap: 6px; justify-content: center; padding: 8px 0 4px; flex: none; }
+.swipe-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--bg-3); transition: all .2s; }
+.swipe-dots i.on { background: var(--accent); width: 16px; border-radius: 3px; }
+
+.pager {
+  flex: 1; display: flex; overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.pager::-webkit-scrollbar { display: none; }
+.page {
+  flex: 0 0 100%; width: 100%; height: 100%; scroll-snap-align: center;
+  overflow-y: auto; padding: 16px 16px 24px; -webkit-overflow-scrolling: touch;
+}
+
+/* generic ios scroll list (library / reports / settings) */
+.ios-scroll { flex: 1; overflow-y: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+
+.ios-card {
+  border: 1px solid var(--line); border-radius: 16px; background: var(--bg-1);
+  padding: 18px; margin-bottom: 14px;
+}
+.ios-card .ic-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.ios-card .ic-ico {
+  width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
+  font-size: 24px; background: var(--bg-2); border: 1px solid var(--line); flex: none;
+}
+.ios-card .ic-name { font-size: 17px; font-weight: 650; }
+.ios-card .ic-sub { font-size: 12px; color: var(--txt-dim); }
+.ios-card .ic-desc { font-size: 13px; color: var(--txt-dim); line-height: 1.5; }
+.ios-card .ic-feat { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.ios-card .ic-feat span {
+  font-size: 11px; font-family: var(--mono); padding: 5px 10px; border-radius: 8px;
+  background: var(--bg-3); border: 1px solid var(--line-soft); color: var(--txt-dim);
+}
+.ios-card .ic-open {
+  margin-top: 16px; width: 100%; min-height: 46px; border-radius: 12px;
+  background: var(--bg-3); border: 1px solid var(--line); color: var(--txt-dim);
+  font-size: 14px; display: grid; place-items: center; cursor: pointer;
+}
+
+/* iOS bottom tab bar */
+.ios-tabbar {
+  flex: none; display: flex; border-top: 1px solid var(--line); background: var(--bg-1);
+  padding-bottom: var(--safe-b);
+}
+.ios-tab {
+  flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; color: var(--txt-faint); cursor: pointer; font-size: 10px; letter-spacing: .02em;
+}
+.ios-tab .tb-ico { font-size: 20px; line-height: 1; }
+.ios-tab.active { color: var(--accent); }
+
+/* ============================================================ TOAST / BANNER */
+#banner {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--term-h) + 16px);
+  z-index: 500; display: none; align-items: center; gap: 12px; max-width: 540px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 11px 14px; box-shadow: 0 10px 30px -10px #000;
+}
+#banner.show { display: flex; }
+#banner.amber { border-color: rgba(245,165,36,.4); }
+#banner .bn-ico { font-size: 18px; }
+#banner .bn-txt { font-size: 13px; color: var(--txt); }
+#banner .bn-txt small { display: block; color: var(--txt-dim); font-size: 11px; }
+#banner .bn-close { color: var(--txt-faint); cursor: pointer; padding: 2px 6px; font-size: 16px; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ===================== BOOT ===================== -->
+<div id="boot">
+  <div class="b-inner">
+    <div class="b-logo">FREAK<span>::</span>SPLOIT</div>
+    <div class="b-status" id="bootStatus">initializing…</div>
+    <div class="b-bar"><i id="bootBar"></i></div>
+  </div>
+</div>
+
+<!-- ===================== DESKTOP APP ===================== -->
+<div id="app" class="desktop">
+  <header class="d-topbar">
+    <div class="brand">FREAK<span>::</span>SPLOIT</div>
+    <div class="spacer"></div>
+    <div class="tb-item" id="daemonChip" title="Daemon connection status">
+      <span class="dot gray" id="daemonDot"></span><span id="daemonLabel">daemon: …</span>
+    </div>
+    <div class="tb-item" id="netChip" title="Network"><span class="dot green" id="netDot"></span><span id="netLabel">online</span></div>
+    <div class="tb-item" id="cmdBtn" title="Command palette">⌘ <span style="margin-left:2px">palette</span></div>
+  </header>
+
+  <nav class="d-sidebar" id="dSidebar"></nav>
+
+  <main class="d-main" id="dMain"></main>
+
+  <section class="d-term" id="dTerm">
+    <div class="t-head">
+      <span class="t-tab active">daemon log</span>
+      <div class="spacer"></div>
+      <span class="dot" id="termDot"></span>
+      <span id="termStatus">disconnected</span>
+      <span class="t-tab" id="termClear" style="margin-left:10px">clear</span>
+      <span class="t-tab" id="termToggle">▾</span>
+    </div>
+    <div class="t-body" id="dTermBody"></div>
+  </section>
+</div>
+
+<!-- ===================== iOS APP ===================== -->
+<div id="app" class="ios">
+  <header class="ios-topbar">
+    <div class="brand">FREAK<span>::</span>SPLOIT</div>
+    <div class="spacer"></div>
+    <div class="it-screen" id="iosScreenLabel"></div>
+  </header>
+
+  <div class="ios-stage" id="iosStage">
+    <!-- Tools (swipe pager) -->
+    <section class="ios-section active" data-sec="tools">
+      <div class="swipe-dots" id="iosDots"></div>
+      <div class="pager" id="iosPager"></div>
+    </section>
+    <!-- Library -->
+    <section class="ios-section" data-sec="library"><div class="ios-scroll" id="iosLibrary"></div></section>
+    <!-- Reports -->
+    <section class="ios-section" data-sec="reports"><div class="ios-scroll" id="iosReports"></div></section>
+    <!-- Settings -->
+    <section class="ios-section" data-sec="settings"><div class="ios-scroll" id="iosSettings"></div></section>
+  </div>
+
+  <nav class="ios-tabbar" id="iosTabbar"></nav>
+</div>
+
+<!-- ===================== BANNER ===================== -->
+<div id="banner">
+  <span class="bn-ico" id="bnIco">⚡</span>
+  <div class="bn-txt" id="bnTxt"></div>
+  <span class="bn-close" id="bnClose">✕</span>
+</div>
+
+<script>
+"use strict";
+/* ===================================================================== *
+ *  FreakSploit foundation shell
+ * ===================================================================== */
+const FS = (() => {
+
+/* --------------------------------------------------------------------- *
+ *  Small utilities
+ * --------------------------------------------------------------------- */
+const $  = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    n.appendChild(typeof kid === "string" ? document.createTextNode(kid) : kid);
+  }
+  return n;
+};
+const now = () => new Date().toTimeString().slice(0, 8);
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+/* --------------------------------------------------------------------- *
+ *  1. PLATFORM DETECTION & CAPABILITY TIERS
+ * --------------------------------------------------------------------- */
+const Platform = (() => {
+  const ua = navigator.userAgent || "";
+  const plat = navigator.platform || "";
+  const maxTouch = navigator.maxTouchPoints || 0;
+
+  // iPadOS 13+ masquerades as desktop Safari -> detect via touch + Mac platform.
+  const iPadOSDesktopUA = /Macintosh/.test(ua) && maxTouch > 1;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || iPadOSDesktopUA;
+  // Some Android browsers; treat Android as desktop tier (Termux can host daemon).
+  const isAndroid = /Android/.test(ua);
+  const isTouch = maxTouch > 0 || "ontouchstart" in window;
+
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+
+  const info = {
+    ua, platform: plat, maxTouchPoints: maxTouch,
+    screen: { w: screen.width, h: screen.height, dpr: window.devicePixelRatio || 1 },
+    connection: conn ? { type: conn.effectiveType || conn.type || "?", downlink: conn.downlink, saveData: !!conn.saveData } : null,
+    isIOS, isAndroid, isTouch, iPadOSDesktopUA,
+    // The capability tier. iOS -> pure browser. Everything else -> desktop tier.
+    mode: isIOS ? "ios" : "desktop",
+  };
+
+  // Optional manual override for testing: ?mode=ios | ?mode=desktop
+  const forced = new URLSearchParams(location.search).get("mode");
+  if (forced === "ios" || forced === "desktop") { info.mode = forced; info.forced = true; }
+
+  return info;
+})();
+
+/* --------------------------------------------------------------------- *
+ *  2. TOOL REGISTRY  (data-driven; desktop modules conditionally loaded)
+ * --------------------------------------------------------------------- *
+ *  tier: "universal" -> renders in BOTH iOS and desktop
+ *  tier: "desktop"   -> daemon-dependent; ONLY registered/rendered on
+ *                       desktop. Its render factory is never invoked on
+ *                       iOS, so iOS never loads desktop-only logic.
+ */
+const UNIVERSAL_TOOLS = [
+  { id:"http-fuzzer",   name:"HTTP Fuzzer",        icon:"🎯", cat:"Web",     desc:"Send parameterized requests via fetch(), analyze responses, detect anomalies.", feat:["fetch()","diff engine","payload sets"] },
+  { id:"header-inspector", name:"Header Inspector", icon:"🧪", cat:"Web",    desc:"Analyze HTTP response headers for security misconfigurations (CORS, CSP, HSTS).", feat:["CORS","CSP","HSTS","grading"] },
+  { id:"dns-recon",     name:"DNS Recon",          icon:"🛰️", cat:"Recon",   desc:"DNS lookups via public DNS-over-HTTPS resolvers.", feat:["DoH","A/AAAA/MX/TXT","PTR"] },
+  { id:"subdomain-enum", name:"Subdomain Enum",    icon:"🌐", cat:"Recon",   desc:"Wordlist-driven subdomain brute force via fetch() probing.", feat:["wordlists","concurrency","wildcard filter"] },
+  { id:"jwt-analyzer",  name:"JWT Analyzer",       icon:"🔑", cat:"Crypto",  desc:"Decode, inspect and test JWTs locally via SubtleCrypto.", feat:["decode","alg checks","HS/RS verify"] },
+  { id:"hash-cracker",  name:"Hash Cracker",       icon:"⛏️", cat:"Crypto",  desc:"Dictionary & brute force on hashes via WebAssembly — runs locally.", feat:["WASM","dictionary","brute force"] },
+  { id:"password-gen",  name:"Password / Wordlist", icon:"🧬", cat:"Crypto", desc:"Rule-based wordlist & password generation, saved to IndexedDB.", feat:["rules","mutations","IndexedDB"] },
+  { id:"ssl-inspector", name:"SSL/TLS Inspector",  icon:"🔒", cat:"Web",     desc:"Analyze cert chains via fetch() + WebSocket probing.", feat:["cert chain","ciphers","expiry"] },
+  { id:"osint",         name:"OSINT Dashboard",    icon:"🔎", cat:"Recon",   desc:"Passive recon aggregator over public APIs (crt.sh, whois, Shodan).", feat:["crt.sh","whois","aggregation"] },
+  { id:"payload-library", name:"Payload Library",  icon:"📚", cat:"Web",     desc:"Curated XSS / SQLi / LFI payload sets, filterable, copy-to-clipboard.", feat:["XSS","SQLi","LFI","copy"] },
+  { id:"report-builder", name:"Report Builder",    icon:"📝", cat:"Output",  desc:"Structured markdown/HTML pentest report generator, exports to file.", feat:["markdown","HTML export","templates"] },
+];
+
+// Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
+// Keeping these inside a function means the iOS path never touches this data.
+function loadDesktopTools() {
+  return [
+    { id:"packet-analyzer", name:"Packet Analyzer", icon:"📡", cat:"Network", daemon:true, desc:"Wireshark-style live capture fed by raw pcap stream over WebSocket, with protocol dissection + BPF filters.", feat:["pcap stream","dissection","BPF"] },
+    { id:"network-scanner", name:"Network Scanner", icon:"🗺️", cat:"Network", daemon:true, desc:"nmap frontend — sends scan configs to daemon /exec, renders results.", feat:["nmap","host discovery","port states"] },
+    { id:"http-interceptor", name:"HTTP Interceptor", icon:"🕸️", cat:"Network", daemon:true, desc:"Burp-style intercepting proxy; daemon intercepts, browser renders req/res editor.", feat:["proxy","intercept","repeater"] },
+    { id:"exploit-console", name:"Exploit Console", icon:"💥", cat:"Offense", daemon:true, desc:"Metasploit-style console backed by a daemon-managed v86/CheerpX Linux runtime.", feat:["modules","sessions","v86 runtime"] },
+    { id:"interface-manager", name:"Interface Manager", icon:"🔌", cat:"Network", daemon:true, desc:"Enumerate NICs, toggle monitor mode via daemon /interfaces.", feat:["NIC list","monitor mode","MAC"] },
+    { id:"packet-injector", name:"Raw Packet Injector", icon:"💉", cat:"Network", daemon:true, desc:"Craft & inject custom packets via daemon /inject.", feat:["packet craft","layers","replay"] },
+    { id:"remote-daemon", name:"Remote Daemon Connector", icon:"🛜", cat:"System", daemon:true, desc:"Pair with a daemon on another LAN device or over a tunnel.", feat:["LAN pair","tunnel","QR pair"] },
+  ];
+}
+
+// Build the active registry for the current tier.
+function buildRegistry() {
+  const tools = UNIVERSAL_TOOLS.map(t => ({ ...t, tier: "universal", daemon: false }));
+  if (Platform.mode === "desktop") {
+    for (const d of loadDesktopTools()) tools.push({ ...d, tier: "desktop" });
+  }
+  return tools;
+}
+
+/* --------------------------------------------------------------------- *
+ *  IndexedDB persistence layer
+ * --------------------------------------------------------------------- */
+const DB = (() => {
+  const NAME = "freaksploit", VERSION = 1;
+  const STORES = ["settings", "wordlists", "history", "reports", "toolstate"];
+  let dbp = null;
+
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      let req;
+      try { req = indexedDB.open(NAME, VERSION); }
+      catch (e) { return rej(e); }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        for (const s of STORES) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
+      };
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+    return dbp;
+  }
+  async function tx(store, mode, fn) {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction(store, mode);
+      const os = t.objectStore(store);
+      const r = fn(os);
+      t.oncomplete = () => res(r && r.result);
+      t.onerror = () => rej(t.error);
+    });
+  }
+  return {
+    available: () => "indexedDB" in window,
+    get:  (store, key)        => tx(store, "readonly",  os => os.get(key)),
+    set:  (store, key, value) => tx(store, "readwrite", os => os.put(value, key)),
+    del:  (store, key)        => tx(store, "readwrite", os => os.delete(key)),
+    all:  (store)             => tx(store, "readonly",  os => os.getAll()),
+  };
+})();
+
+const Settings = {
+  cache: {},
+  async load() {
+    try { this.cache = (await DB.get("settings", "app")) || {}; }
+    catch { this.cache = {}; }
+    return this.cache;
+  },
+  get(k, d) { return k in this.cache ? this.cache[k] : d; },
+  async set(k, v) { this.cache[k] = v; try { await DB.set("settings", "app", this.cache); } catch {} },
+};
+
+/* --------------------------------------------------------------------- *
+ *  4. DAEMON WEBSOCKET CONNECTION MANAGER  (desktop tier only)
+ * --------------------------------------------------------------------- */
+const Daemon = (() => {
+  const URL_DEFAULT = "ws://localhost:7373";
+  const listeners = new Set();          // status listeners
+  const msgListeners = new Set();       // message listeners
+  let ws = null;
+  let url = URL_DEFAULT;
+  let state = "idle";                   // idle|connecting|online|offline|error
+  let retries = 0;
+  let manualClose = false;
+  let reconnectTimer = null;
+  let everConnected = false;
+
+  const MAX_DELAY = 15000;
+  const backoff = () => clamp(800 * Math.pow(1.6, retries), 800, MAX_DELAY);
+
+  function setState(s, detail) {
+    state = s;
+    listeners.forEach(fn => { try { fn(s, detail); } catch {} });
+  }
+
+  function connect(target) {
+    if (Platform.mode !== "desktop") return;           // never on iOS
+    if (target) url = target;
+    manualClose = false;
+    clearTimeout(reconnectTimer);
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+    setState("connecting", { url, attempt: retries + 1 });
+    Log.line(`connecting to ${url} (attempt ${retries + 1})…`, retries ? "warn" : "");
+
+    try { ws = new WebSocket(url); }
+    catch (e) { Log.line(`socket error: ${e.message}`, "err"); scheduleReconnect(); return; }
+
+    ws.onopen = () => {
+      retries = 0; everConnected = true;
+      setState("online", { url });
+      Log.line(`daemon online @ ${url}`, "ok");
+      send({ type: "hello", client: "freaksploit-shell", ts: Date.now() });
+    };
+    ws.onmessage = (ev) => {
+      let data = ev.data;
+      try { data = JSON.parse(ev.data); } catch {}
+      msgListeners.forEach(fn => { try { fn(data); } catch {} });
+      const t = (data && data.type) || "message";
+      Log.line(`◀ ${typeof data === "string" ? data : t}`, "in");
+    };
+    ws.onclose = () => {
+      ws = null;
+      if (manualClose) { setState("offline", { manual: true }); Log.line("disconnected (manual)"); return; }
+      setState("offline");
+      scheduleReconnect();
+    };
+    ws.onerror = () => { setState("error"); /* close will follow */ };
+  }
+
+  function scheduleReconnect() {
+    if (manualClose || Platform.mode !== "desktop") return;
+    const delay = backoff();
+    retries++;
+    Log.line(`reconnect in ${(delay/1000).toFixed(1)}s`, "warn");
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => connect(), delay);
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const payload = typeof obj === "string" ? obj : JSON.stringify(obj);
+      ws.send(payload);
+      if (typeof obj !== "object" || obj.type !== "hello") Log.line(`▶ ${typeof obj === "string" ? obj : obj.type}`, "in");
+      return true;
+    }
+    Log.line("send failed — daemon offline", "err");
+    return false;
+  }
+  function disconnect() {
+    manualClose = true;
+    clearTimeout(reconnectTimer);
+    if (ws) ws.close();
+  }
+  function retryNow() { retries = 0; manualClose = false; disconnect(); manualClose = false; connect(); }
+
+  return {
+    connect, disconnect, send, retryNow,
+    onStatus: fn => { listeners.add(fn); fn(state); return () => listeners.delete(fn); },
+    onMessage: fn => { msgListeners.add(fn); return () => msgListeners.delete(fn); },
+    get state() { return state; },
+    get url() { return url; },
+    get everConnected() { return everConnected; },
+    isOnline: () => state === "online",
+  };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  Terminal / log panel (desktop)
+ * --------------------------------------------------------------------- */
+const Log = (() => {
+  let body = null;
+  const buffer = [];
+  const MAX = 400;
+  function line(text, kind = "") {
+    buffer.push({ text, kind, ts: now() });
+    if (buffer.length > MAX) buffer.shift();
+    if (!body) return;
+    const node = el("div", { class: "log-line " + kind },
+      el("span", { class: "ts" }, `[${now()}] `), text);
+    body.appendChild(node);
+    body.scrollTop = body.scrollHeight;
+    while (body.childElementCount > MAX) body.removeChild(body.firstChild);
+  }
+  function mount(node) {
+    body = node;
+    body.innerHTML = "";
+    for (const l of buffer) {
+      body.appendChild(el("div", { class: "log-line " + l.kind },
+        el("span", { class: "ts" }, `[${l.ts}] `), l.text));
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+  function clear() { buffer.length = 0; if (body) body.innerHTML = ""; }
+  return { line, mount, clear };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  3. ROUTER  (hash based)
+ * --------------------------------------------------------------------- */
+const Router = (() => {
+  const handlers = new Set();
+  function parse() {
+    const h = location.hash.replace(/^#\/?/, "");
+    const [route, ...rest] = h.split("/");
+    return { route: route || "overview", params: rest };
+  }
+  function go(route) {
+    if (location.hash === "#/" + route) emit();
+    else location.hash = "#/" + route;
+  }
+  function emit() { const r = parse(); handlers.forEach(fn => fn(r)); }
+  function start() { window.addEventListener("hashchange", emit); }
+  return { go, parse, start, onChange: fn => handlers.add(fn) };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  Shared tool-view renderer (used by desktop main + reused content)
+ * --------------------------------------------------------------------- */
+function toolHeader(tool) {
+  const meta = el("div", { class: "meta" });
+  meta.appendChild(el("span", { class: "badge" }, tool.cat));
+  if (tool.daemon) meta.appendChild(el("span", { class: "badge amber" }, "daemon required"));
+  else meta.appendChild(el("span", { class: "badge ok" }, "browser-native"));
+  return el("div", { class: "tool-head" },
+    el("div", { class: "t-ico" }, tool.icon),
+    el("div", {},
+      el("h1", {}, tool.name),
+      el("p", {}, tool.desc),
+      meta));
+}
+function featRow(tool) {
+  const row = el("div", { class: "s-feat" });
+  (tool.feat || []).forEach(f => row.appendChild(el("span", {}, f)));
+  return row;
+}
+function stubBody(tool) {
+  return el("div", { class: "stub-panel" },
+    el("div", { class: "s-ico" }, "🚧"),
+    el("h3", {}, "Module scaffold ready"),
+    el("div", {}, "UI for this tool ships next. The shell, routing and state plumbing are wired."),
+    featRow(tool));
+}
+function daemonGate(tool) {
+  const gate = el("div", { class: "gate" },
+    el("div", { class: "g-ico" }, "🔌"),
+    el("div", { class: "g-txt", html: `<b>Connect the daemon to use ${tool.name}</b>` +
+      `<small>This tool streams from the local Rust daemon at <code>${Daemon.url}</code>.</small>` }),
+    el("div", { class: "btn primary", onclick: () => Daemon.retryNow() }, "Retry connection"));
+  const wrap = el("div", {});
+  const stub = stubBody(tool);
+  function sync(s) {
+    if (s === "online") { gate.classList.add("hidden"); stub.classList.remove("hidden"); }
+    else { gate.classList.remove("hidden"); stub.classList.add("hidden"); }
+  }
+  Daemon.onStatus(sync); sync(Daemon.state);
+  wrap.appendChild(gate); wrap.appendChild(stub);
+  return wrap;
+}
+function renderToolView(container, tool) {
+  container.innerHTML = "";
+  container.appendChild(toolHeader(tool));
+  container.appendChild(tool.daemon ? daemonGate(tool) : stubBody(tool));
+}
+
+/* --------------------------------------------------------------------- *
+ *  DESKTOP UI
+ * --------------------------------------------------------------------- */
+const DesktopUI = (() => {
+  let registry = [];
+  let current = "overview";
+
+  function buildSidebar() {
+    const side = $("#dSidebar");
+    side.innerHTML = "";
+    side.appendChild(navItem({ id:"overview", name:"Overview", icon:"▦" }, "Home"));
+
+    const cats = [...new Set(registry.map(t => t.cat))];
+    for (const cat of cats) {
+      side.appendChild(el("div", { class: "nav-group-title" }, cat));
+      registry.filter(t => t.cat === cat).forEach(t => side.appendChild(navItem(t)));
+    }
+    const foot = el("div", { class: "sidebar-foot" },
+      `${registry.length} tools • ${Platform.mode} tier`);
+    side.appendChild(foot);
+  }
+  function navItem(tool, groupless) {
+    const item = el("div", { class: "nav-item", "data-id": tool.id, onclick: () => Router.go(tool.id) },
+      el("span", { class: "ico" }, tool.icon),
+      el("span", { class: "lbl" }, tool.name));
+    if (tool.daemon) {
+      const dot = el("span", { class: "dot amber req" });
+      item.appendChild(dot);
+      Daemon.onStatus(s => { dot.className = "dot req " + (s === "online" ? "green" : "amber"); });
+    }
+    return item;
+  }
+  function highlight(id) {
+    $$(".nav-item", $("#dSidebar")).forEach(n => n.classList.toggle("active", n.dataset.id === id));
+  }
+
+  function renderOverview() {
+    const main = $("#dMain");
+    main.innerHTML = "";
+    main.appendChild(el("div", { class: "tool-head" },
+      el("div", { class: "t-ico" }, "▦"),
+      el("div", {},
+        el("h1", {}, "Workspace"),
+        el("p", {}, "Single-file, zero-install pentest & developer suite. Browser-native tools run anywhere; daemon-backed tools light up when the local Rust daemon is connected."))));
+
+    const groups = [
+      { title: "Browser-native tools", filter: t => !t.daemon },
+      { title: "Daemon-connected tools", filter: t => t.daemon },
+    ];
+    for (const g of groups) {
+      const items = registry.filter(g.filter);
+      if (!items.length) continue;
+      main.appendChild(el("div", { class: "section-title" }, g.title));
+      const grid = el("div", { class: "grid" });
+      items.forEach(t => grid.appendChild(toolCard(t)));
+      main.appendChild(grid);
+    }
+  }
+  function toolCard(tool) {
+    const foot = el("div", { class: "c-foot" });
+    if (tool.daemon) {
+      const dot = el("span", { class: "dot amber" });
+      const lbl = el("span", { class: "badge amber" }, "daemon");
+      foot.append(dot, lbl);
+      Daemon.onStatus(s => {
+        const on = s === "online";
+        dot.className = "dot " + (on ? "green" : "amber");
+        lbl.className = "badge " + (on ? "ok" : "amber");
+        lbl.textContent = on ? "ready" : "daemon";
+      });
+    } else {
+      foot.append(el("span", { class: "dot green" }), el("span", { class: "badge ok" }, "ready"));
+    }
+    return el("div", { class: "card", onclick: () => Router.go(tool.id) },
+      el("div", { class: "c-top" }, el("span", { class: "c-ico" }, tool.icon), el("span", { class: "c-name" }, tool.name)),
+      el("div", { class: "c-desc" }, tool.desc),
+      foot);
+  }
+
+  function route({ route }) {
+    current = route;
+    if (route === "overview") { highlight("overview"); renderOverview(); return; }
+    const tool = registry.find(t => t.id === route);
+    if (!tool) { Router.go("overview"); return; }
+    highlight(route);
+    renderToolView($("#dMain"), tool);
+  }
+
+  function wireTerminal() {
+    Log.mount($("#dTermBody"));
+    const term = $("#dTerm");
+    $("#termToggle").addEventListener("click", () => {
+      term.classList.toggle("collapsed");
+      $("#termToggle").textContent = term.classList.contains("collapsed") ? "▴" : "▾";
+    });
+    $("#termClear").addEventListener("click", () => Log.clear());
+    Daemon.onStatus(s => {
+      const map = { online: ["green","connected"], connecting: ["amber","connecting…"], offline: ["red","disconnected"], error: ["red","error"], idle: ["gray","idle"] };
+      const [c, t] = map[s] || ["gray", s];
+      $("#termDot").className = "dot " + c;
+      $("#termStatus").textContent = t;
+    });
+  }
+  function wireTopbar() {
+    Daemon.onStatus(s => {
+      const map = { online: ["green","online"], connecting: ["amber","connecting"], offline: ["red","offline"], error: ["red","error"], idle: ["gray","idle"] };
+      const [c, t] = map[s] || ["gray", s];
+      $("#daemonDot").className = "dot " + c + (s === "connecting" ? " pulse" : "");
+      $("#daemonLabel").textContent = "daemon: " + t;
+    });
+    $("#daemonChip").addEventListener("click", () => Daemon.retryNow());
+    $("#cmdBtn").addEventListener("click", () => alert("Command palette ships with the tool UIs."));
+    window.addEventListener("online",  () => { $("#netDot").className = "dot green"; $("#netLabel").textContent = "online"; });
+    window.addEventListener("offline", () => { $("#netDot").className = "dot red";   $("#netLabel").textContent = "offline"; });
+  }
+
+  function keyboardNav() {
+    document.addEventListener("keydown", (e) => {
+      if (e.target.matches("input,textarea")) return;
+      const ids = ["overview", ...registry.map(t => t.id)];
+      const i = ids.indexOf(current);
+      if (e.key === "j" || e.key === "ArrowDown") { Router.go(ids[clamp(i + 1, 0, ids.length - 1)]); e.preventDefault(); }
+      if (e.key === "k" || e.key === "ArrowUp")   { Router.go(ids[clamp(i - 1, 0, ids.length - 1)]); e.preventDefault(); }
+      if (e.key === "g") Router.go("overview");
+    });
+  }
+
+  function init(reg) {
+    registry = reg;
+    buildSidebar();
+    wireTopbar();
+    wireTerminal();
+    keyboardNav();
+    Router.onChange(route);
+    // banner if daemon never connects shortly after load
+    setTimeout(() => {
+      if (!Daemon.isOnline()) {
+        Banner.show("amber", "🔌",
+          "Install the PenKit daemon to unlock full capabilities",
+          'Network, packet & exploit tools need the local daemon. <a href="#" id="dlDaemon">Download →</a>');
+      }
+    }, 4000);
+    Daemon.onStatus(s => { if (s === "online") Banner.hide(); });
+  }
+  return { init };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  iOS UI  (swipe pager + bottom tab bar) — NO daemon anywhere
+ * --------------------------------------------------------------------- */
+const IOSUI = (() => {
+  let tools = [];            // universal only
+  let pageIndex = 0;
+
+  const TABS = [
+    { sec:"tools",    icon:"🧰", label:"Tools" },
+    { sec:"library",  icon:"📚", label:"Library" },
+    { sec:"reports",  icon:"📝", label:"Reports" },
+    { sec:"settings", icon:"⚙️", label:"Settings" },
+  ];
+
+  function buildPager() {
+    const pager = $("#iosPager");
+    const dots = $("#iosDots");
+    pager.innerHTML = ""; dots.innerHTML = "";
+    tools.forEach((t, i) => {
+      pager.appendChild(toolPage(t));
+      dots.appendChild(el("i", { class: i === 0 ? "on" : "" }));
+    });
+    pager.addEventListener("scroll", () => {
+      const idx = Math.round(pager.scrollLeft / pager.clientWidth);
+      if (idx !== pageIndex) { pageIndex = idx; syncDots(); syncLabel(); }
+    }, { passive: true });
+    syncLabel();
+  }
+  function syncDots() {
+    $$("#iosDots i").forEach((d, i) => d.classList.toggle("on", i === pageIndex));
+  }
+  function syncLabel() {
+    const t = tools[pageIndex];
+    $("#iosScreenLabel").textContent = t ? `${t.name} · ${pageIndex + 1}/${tools.length}` : "";
+  }
+  function toolPage(tool) {
+    return el("div", { class: "page" },
+      el("div", { class: "ios-card" },
+        el("div", { class: "ic-top" },
+          el("div", { class: "ic-ico" }, tool.icon),
+          el("div", {}, el("div", { class: "ic-name" }, tool.name), el("div", { class: "ic-sub" }, tool.cat + " · browser-native"))),
+        el("div", { class: "ic-desc" }, tool.desc),
+        el("div", { class: "ic-feat" }, ...(tool.feat || []).map(f => el("span", {}, f))),
+        el("div", { class: "ic-open", onclick: () => openTool(tool) }, "Open " + tool.name + " →")));
+  }
+  function openTool(tool) {
+    // Foundation: tools are stubs. Show a lightweight detail card in place.
+    const page = $$("#iosPager .page")[pageIndex];
+    page.innerHTML = "";
+    page.appendChild(el("div", { class: "ios-card" },
+      el("div", { class: "ic-top" },
+        el("div", { class: "ic-ico" }, tool.icon),
+        el("div", {}, el("div", { class: "ic-name" }, tool.name), el("div", { class: "ic-sub" }, "module scaffold"))),
+      el("div", { class: "ic-desc" }, "🚧 The interface for this tool ships next. Shell, routing, swipe nav and IndexedDB are live."),
+      el("div", { class: "ic-feat" }, ...(tool.feat || []).map(f => el("span", {}, f))),
+      el("div", { class: "ic-open", onclick: () => { page.innerHTML = ""; page.appendChild(toolPage(tool).firstChild); } }, "← Back")));
+  }
+
+  function buildTabs() {
+    const bar = $("#iosTabbar");
+    bar.innerHTML = "";
+    TABS.forEach((tab, i) => {
+      bar.appendChild(el("div", { class: "ios-tab" + (i === 0 ? " active" : ""), "data-sec": tab.sec, onclick: () => showSection(tab.sec) },
+        el("span", { class: "tb-ico" }, tab.icon), el("span", {}, tab.label)));
+    });
+  }
+  function showSection(sec) {
+    $$(".ios-section").forEach(s => s.classList.toggle("active", s.dataset.sec === sec));
+    $$(".ios-tab").forEach(t => t.classList.toggle("active", t.dataset.sec === sec));
+    if (sec === "tools") syncLabel();
+    else $("#iosScreenLabel").textContent = TABS.find(t => t.sec === sec).label;
+  }
+
+  function simpleList(node, title, body) {
+    node.innerHTML = "";
+    node.appendChild(el("div", { class: "ios-card" },
+      el("div", { class: "ic-top" }, el("div", { class: "ic-name" }, title)),
+      el("div", { class: "ic-desc" }, body)));
+  }
+
+  function init(universalTools) {
+    tools = universalTools;
+    buildPager();
+    buildTabs();
+    simpleList($("#iosLibrary"), "Payload & Wordlist Library", "Curated payloads and saved wordlists will live here, persisted to IndexedDB. Scaffold ready.");
+    simpleList($("#iosReports"), "Reports", "Draft, manage and export structured pentest reports. Drafts persist offline. Scaffold ready.");
+    renderSettings();
+  }
+  function renderSettings() {
+    const node = $("#iosSettings");
+    node.innerHTML = "";
+    const c = Platform.connection;
+    node.appendChild(el("div", { class: "ios-card" },
+      el("div", { class: "ic-top" }, el("div", { class: "ic-name" }, "About")),
+      el("div", { class: "ic-desc", html:
+        `FreakSploit — single-file, zero-install security suite.<br><br>` +
+        `Mode: <b>iOS (pure browser)</b><br>` +
+        `Storage: <b>${DB.available() ? "IndexedDB ready" : "unavailable"}</b><br>` +
+        `Offline shell: <b id="swState">checking…</b><br>` +
+        (c ? `Connection: <b>${c.type}</b>` : "") })));
+  }
+  return { init, showSection };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  Banner / toast
+ * --------------------------------------------------------------------- */
+const Banner = (() => {
+  const node = () => $("#banner");
+  function show(kind, ico, title, sub) {
+    const b = node();
+    b.className = "show " + (kind || "");
+    $("#bnIco").textContent = ico || "⚡";
+    $("#bnTxt").innerHTML = `${title}${sub ? `<small>${sub}</small>` : ""}`;
+  }
+  function hide() { node().className = ""; }
+  document.addEventListener("click", (e) => { if (e.target.id === "bnClose") hide(); });
+  return { show, hide };
+})();
+
+/* --------------------------------------------------------------------- *
+ *  Service worker — single-file offline shell via Blob URL.
+ *  Caches the current document so the app shell loads offline; tools
+ *  degrade gracefully when their network calls fail.
+ * --------------------------------------------------------------------- */
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return false;
+  const swCode = `
+    const CACHE = "freaksploit-shell-v1";
+    const SHELL = [self.registration.scope, "./", "index.html"];
+    self.addEventListener("install", (e) => {
+      self.skipWaiting();
+      e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.filter(Boolean)).catch(()=>{})));
+    });
+    self.addEventListener("activate", (e) => {
+      e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+    });
+    self.addEventListener("fetch", (e) => {
+      const req = e.request;
+      if (req.method !== "GET") return;
+      if (req.mode === "navigate") {
+        e.respondWith(fetch(req).then(r => { const cp=r.clone(); caches.open(CACHE).then(c=>c.put(req,cp)); return r; }).catch(() => caches.match(req).then(m => m || caches.match("index.html"))));
+        return;
+      }
+      e.respondWith(caches.match(req).then(m => m || fetch(req).then(r => { if (r.ok && new URL(req.url).origin === location.origin) { const cp=r.clone(); caches.open(CACHE).then(c=>c.put(req,cp)); } return r; }).catch(()=>m)));
+    });
+  `;
+  try {
+    const blob = new Blob([swCode], { type: "text/javascript" });
+    const reg = await navigator.serviceWorker.register(URL.createObjectURL(blob));
+    return !!reg;
+  } catch (e) {
+    // Blob-scope SW may be rejected on some hosts; offline still works via HTTP cache.
+    return false;
+  }
+}
+
+/* --------------------------------------------------------------------- *
+ *  BOOT SEQUENCE
+ * --------------------------------------------------------------------- */
+async function boot() {
+  const setBoot = (pct, msg) => { $("#bootBar").style.width = pct + "%"; if (msg) $("#bootStatus").textContent = msg; };
+
+  setBoot(12, "detecting platform…");
+  await Settings.load().catch(() => {});
+
+  setBoot(34, "building registry…");
+  const registry = buildRegistry();
+
+  setBoot(55, "registering offline shell…");
+  const swOk = await registerServiceWorker().catch(() => false);
+
+  setBoot(76, "mounting interface…");
+  document.body.setAttribute("data-mode", Platform.mode);
+
+  if (Platform.mode === "desktop") {
+    Log.line("FreakSploit shell — desktop tier", "ok");
+    Log.line(`platform: ${Platform.platform || "?"} • touch:${Platform.maxTouchPoints} • screen:${Platform.screen.w}×${Platform.screen.h}`);
+    DesktopUI.init(registry);
+    Router.start();
+    Router.onChange(() => {});
+    // initial route
+    if (!location.hash) location.hash = "#/overview";
+    Router.go(Router.parse().route);
+    setTimeout(() => Daemon.connect(), 300);   // begin daemon connection attempts
+  } else {
+    // iOS: only universal tools; daemon code is never invoked.
+    IOSUI.init(registry.filter(t => t.tier === "universal"));
+    const swState = document.getElementById("swState");
+    if (swState) swState.textContent = swOk ? "active" : "http cache";
+  }
+
+  setBoot(100, "ready");
+  setTimeout(() => { $("#boot").style.display = "none"; }, 250);
+
+  // expose for debugging
+  window.__FS = { Platform, Daemon, DB, Router, registry };
+}
+
+document.addEventListener("DOMContentLoaded", boot);
+
+return { Platform, Daemon, DB, Router };
+})();
+</script>
+</body>
+</html>
