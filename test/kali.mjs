@@ -195,6 +195,59 @@ const out = (p) => p.locator('#dMain .out').first().innerText();
   await p.close(); s.close();
 }
 
+/* JWT Attack Lab — alg:none generation */
+{
+  const sample = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6InVzZXIifQ.x';
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/jwt-attacks', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain textarea').first().fill(sample);
+  await p.locator('#dMain').getByText('Generate attack tokens', { exact: true }).click();
+  await p.waitForTimeout(400);
+  const titles = await p.locator('#dMain .lr-title').allInnerTexts();
+  ok('JWT Attacks generates alg:none + kid + role', titles.some(t => /alg:none/.test(t)) && titles.some(t => /kid/.test(t)) && titles.some(t => /admin/.test(t)));
+  await p.close();
+}
+
+/* HTTP Methods Tester — PUT enabled */
+{
+  const { s, url } = await serve((req, res) => { if (req.method === 'PUT') { res.statusCode = 200; res.end('ok'); } else { res.statusCode = 200; res.end('ok'); } });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/http-methods', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/resource');
+  await p.locator('#dMain').getByText('Test methods', { exact: true }).click();
+  await p.waitForTimeout(1500);
+  ok('HTTP Methods flags enabled PUT', /PUT\s+200.*enabled/s.test(await out(p)) || /method enabled/.test(await out(p)));
+  await p.close(); s.close();
+}
+
+/* 403 Bypass — /admin 403 but /admin/ 200 */
+{
+  const { s, url } = await serve((req, res) => { if (req.url === '/admin/') { res.statusCode = 200; res.end('secret panel'); } else if (req.url === '/admin') { res.statusCode = 403; res.end('forbidden'); } else { res.statusCode = 404; res.end('x'); } });
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/bypass-403', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain input').first().fill(url + '/admin');
+  await p.locator('#dMain').getByText('Try bypasses', { exact: true }).click();
+  await p.waitForTimeout(2000);
+  const results = await p.locator('#dMain table.tbl tbody tr td:last-child').allInnerTexts();
+  ok('403 Bypass finds /admin/ trick', results.some(r => /BYPASS/.test(r)), JSON.stringify(results.filter(Boolean).slice(0, 3)));
+  await p.close(); s.close();
+}
+
+/* CSP Auditor — flags unsafe-inline */
+{
+  const p = await b.newPage();
+  await p.goto(file + '?mode=desktop#/csp-auditor', { waitUntil: 'networkidle' });
+  await p.waitForTimeout(300);
+  await p.locator('#dMain textarea').first().fill("default-src 'self'; script-src 'self' 'unsafe-inline'");
+  await p.locator('#dMain').getByText('Audit pasted CSP', { exact: true }).click();
+  await p.waitForTimeout(300);
+  ok('CSP Auditor flags unsafe-inline', /unsafe-inline/.test(await out(p)));
+  await p.close();
+}
+
 await b.close();
 console.log('\n' + (fails ? 'FAIL (' + fails + ' failures)' : 'PASS — all Kali-grade tools verified'));
 process.exit(fails ? 1 : 0);

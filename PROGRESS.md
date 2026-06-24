@@ -125,12 +125,19 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] WebRTC IP Leak (ICE candidate harvesting)
 - [x] EXIF / Metadata Viewer (offline JPEG EXIF + GPS parser)
 
+### Phase 2.9 — Kali wave 4 (universal) ✅
+- [x] JWT Attack Lab (alg:none, kid path/SQLi, RS256→HS256 confusion, jku/x5u)
+- [x] HTTP Methods Tester (verb tampering, dangerous PUT/DELETE)
+- [x] 403 Bypass Tester (path tricks + header overrides)
+- [x] CSP Auditor (graded; unsafe-inline/eval, wildcards, missing dirs)
+- [x] Cookie Analyzer (Secure/HttpOnly/SameSite/prefix audit)
+- [x] Dork Generator (Google dorks, clickable)
+
 ## Backlog / next up (when user says "continue")
-1. More Kali coverage still browser-feasible: Google-dork generator,
-   JWT alg-confusion (RS256→HS256) + kid/jku, prototype-pollution probe,
-   403-bypass tester, HTTP verb/methods tester, CSP auditor,
-   cookie-security analyzer, S3/cloud-bucket finder, favicon-hash,
-   typosquat generator, XXE/SSTI helper, JSON CSRF, cache-poisoning probe.
+1. Still browser-feasible: prototype-pollution probe, S3/cloud-bucket
+   finder, favicon-hash (shodan), typosquat/domain-permutation generator
+   (+DoH check), cache-poisoning probe, XXE helper, timestamp/UUID/regex
+   utilities, mixed-content scanner, JSON-CSRF, Wayback/archive recon.
 2. NOT feasible in-browser (document as such): HTTP request smuggling
    (can't control TE/CL via fetch), raw nmap/masscan, ARP/L2.
 3. Optional standalone sw.js for full offline navigation.
