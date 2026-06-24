@@ -4,12 +4,28 @@ A single-file, zero-install, browser-based developer & pentesting suite. The
 page itself is always the UI — drop `index.html` on GitHub Pages (or any static
 CDN) and it runs. No build step, no bundler, no npm, no server-side compute.
 
-## Status — Foundation shell
+## Status — Functional suite
 
-This is the foundational shell. The interactive tool UIs land on top of it next;
-every tool currently renders a wired stub card.
+The shell **and all 18 tools** are implemented. Browser-native tools run on
+desktop and iOS; daemon tools render full protocol UIs that activate when the
+WebSocket is connected. Verified with a headless Playwright smoke test
+(`test/smoke.mjs`): both layouts mount with no runtime errors, all 19 routes
+render, and the word "daemon" never appears anywhere in the iOS build.
 
-What's built:
+### Tools
+
+**Browser-native (desktop + iOS):** JWT Analyzer (decode + HS verify),
+Header Inspector (security grading), DNS Recon (DoH), HTTP Fuzzer (FUZZ +
+anomaly detection), Subdomain Enumerator (DoH brute force), Password/Wordlist
+Builder (mutations + IndexedDB), Payload Library (curated + custom), Hash
+Cracker (MD5/SHA dictionary + brute force), SSL/TLS Inspector (crt.sh + probe),
+OSINT Dashboard (crt.sh + DNS), Report Builder (markdown/HTML export).
+
+**Daemon-connected (desktop only):** Network Scanner, Packet Analyzer, HTTP
+Interceptor, Interface Manager, Raw Packet Injector, Exploit Console, Remote
+Daemon Connector.
+
+### Shell foundation
 
 1. **Platform detection & capability tiers** — `navigator.userAgent`,
    `maxTouchPoints`, screen dimensions and `connection` decide the tier.

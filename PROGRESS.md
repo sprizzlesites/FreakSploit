@@ -70,12 +70,15 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Remote Daemon Connector (custom ws URL, pair, persist)
 
 ### Phase 5 — Polish
-- [ ] Command palette (⌘K) fuzzy tool/action search
-- [ ] Global search in sidebar
-- [ ] History store viewer (recent runs per tool)
-- [ ] Keyboard shortcut help overlay (`?`)
-- [ ] Settings: theme accents, telemetry-free confirm
-- [ ] README + screenshots refresh
+- [x] Command palette (⌘K) fuzzy tool/action search
+- [x] Keyboard shortcut help overlay (`?`)
+- [x] Desktop Settings route
+- [x] Headless Playwright smoke test (`test/smoke.mjs`) — all routes green
+- [x] README refresh
+- [ ] History store viewer (recent runs per tool) — store exists, no UI yet
+- [ ] Settings: theme accents
+- [ ] Screenshots / GIF in README
+- [ ] Real sw.js option for full offline navigation (currently blob SW)
 
 ---
 
@@ -89,5 +92,11 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   (Network Scanner, Packet Analyzer, HTTP Interceptor, Interface Manager,
   Raw Packet Injector, Exploit Console, Remote Daemon Connector) over a
   JSON RPC helper; gate mounts them when online. Boot uses saved ws URL.
-  **Next up: Phase 5 polish — command palette (⌘K) first, then history
-  viewer, shortcut help overlay, desktop Settings route, README refresh.**
+- **S1 (overnight cont.)**: Phase 5 mostly done — command palette (⌘K),
+  help overlay (?), desktop Settings route, README refresh, and a headless
+  Playwright smoke test (`test/smoke.mjs`) that passes: both modes mount
+  with no runtime errors, all 19 routes render, iOS shows zero "daemon".
+  **CORE SUITE COMPLETE.** Remaining are nice-to-haves:
+  **Next up: (1) per-tool run History viewer (history store already exists),
+  (2) theme-accent picker in Settings, (3) screenshots in README,
+  (4) optional standalone sw.js for full offline navigation.**
