@@ -888,6 +888,18 @@ const Toast = (() => {
  * --------------------------------------------------------------------- */
 const Impl = {};
 
+/* Daemon-connected tool implementations + a tiny request/stream helper.
+ * Protocol: JSON messages over the daemon WebSocket. Each request carries
+ * a {type, id}; responses echo the id (or stream with the same channel). */
+const DaemonImpl = {};
+const RPC = {
+  send(type, payload = {}) { const id = "r" + Math.random().toString(36).slice(2, 9); Daemon.send(Object.assign({ type, id }, payload)); return id; },
+  on(typeOrFn, fn) {
+    const pred = typeof typeOrFn === "function" ? typeOrFn : (m => m && m.type === typeOrFn);
+    return Daemon.onMessage(m => { if (pred(m)) fn(m); });
+  },
+};
+
 /* shared low-level helpers for tools */
 const Bytes = {
   fromB64url(str) {
@@ -1574,6 +1586,82 @@ Impl["report-builder"] = (root) => {
       el("div", { class: "row" }, UIKit.btn("Preview markdown", preview, "primary"), UIKit.btn("Download .md", () => dl("md")), UIKit.btn("Download .html", () => dl("html"))), o.node));
 };
 
+/* ===================== DAEMON: REMOTE CONNECTOR ===================== */
+DaemonImpl["remote-daemon"] = (root) => {
+  const urlF = UIKit.field("Daemon WebSocket URL", { value: Settings.get("daemonUrl", Daemon.url), mono: true });
+  const statusLine = el("div", { class: "out" });
+  const refresh = () => { statusLine.textContent = "state : " + Daemon.state + "\nurl   : " + Daemon.url + "\nseen  : " + (Daemon.everConnected ? "yes" : "never"); };
+  Daemon.onStatus(() => { if (root.isConnected) refresh(); }); refresh();
+  const connect = () => { const u = urlF.input.value.trim(); Settings.set("daemonUrl", u); Daemon.connect(u); Toast.show("Connecting to " + u); };
+  const presets = el("div", { class: "chips" },
+    ...["ws://localhost:7373", "ws://127.0.0.1:7373", "ws://raspberrypi.local:7373"].map(p =>
+      el("div", { class: "chip", onclick: () => { urlF.input.value = p; } }, p)));
+  root.append(
+    UIKit.panel("Connection", null, urlF.wrap, el("div", { class: "fld" }, el("label", {}, "Presets"), presets),
+      el("div", { class: "row" }, UIKit.btn("Connect", connect, "primary"), UIKit.btn("Disconnect", () => Daemon.disconnect()), UIKit.btn("Retry now", () => Daemon.retryNow(), "ghost"))),
+    UIKit.panel("Status", null, statusLine),
+    UIKit.panel("Pairing", null, el("div", { class: "hint" }, "Point this at a daemon on another LAN device or a tunnel endpoint (e.g. a Raspberry Pi) to drive its capabilities from this browser. The daemon must allow this origin.")));
+};
+
+/* ===================== DAEMON: NETWORK SCANNER ===================== */
+DaemonImpl["network-scanner"] = (root) => {
+  const target = UIKit.field("Target (host / CIDR / range)", { placeholder: "192.168.1.0/24", mono: true });
+  const profile = UIKit.select("Profile", [["ping", "Ping sweep"], ["quick", "Quick (top 100)"], ["full", "Full TCP"], ["custom", "Custom ports"]]);
+  const ports = UIKit.field("Ports", { placeholder: "22,80,443,8080", mono: true });
+  const o = UIKit.out();
+  const tbody = el("tbody", {});
+  const tbl = el("table", { class: "tbl" }, el("thead", {}, el("tr", {}, el("th", {}, "host"), el("th", {}, "port"), el("th", {}, "state"), el("th", {}, "service"))), tbody);
+  RPC.on(m => /^scan\./.test(m.type || ""), (m) => {
+    if (!root.isConnected) return;
+    if (m.type === "scan.host") o.line("host up: " + m.host, "ok");
+    else if (m.type === "scan.port") tbody.appendChild(el("tr", {}, el("td", {}, m.host), el("td", {}, String(m.port)), el("td", { class: m.state === "open" ? "ok" : "dim" }, m.state), el("td", {}, m.service || "")));
+    else if (m.type === "scan.done") o.line("scan complete — " + (m.summary || ""), "ok");
+    else if (m.type === "scan.error") o.line("error: " + m.message, "err");
+  });
+  const run = () => { o.clear(); tbody.innerHTML = ""; o.line("→ requesting scan…", "dim"); RPC.send("scan.start", { target: target.input.value.trim(), profile: profile.input.value, ports: ports.input.value.trim() }); };
+  root.append(
+    UIKit.panel("nmap scan", null, el("div", { class: "toolbar" }, target.wrap, profile.wrap, ports.wrap), el("div", { class: "row" }, UIKit.btn("Run scan", run, "primary"), UIKit.btn("Stop", () => RPC.send("scan.stop"), "ghost"))),
+    UIKit.panel("Activity", null, o.node),
+    UIKit.panel("Results", null, el("div", { style: "max-height:360px;overflow:auto" }, tbl)));
+};
+
+/* ===================== DAEMON: INTERFACE MANAGER ===================== */
+DaemonImpl["interface-manager"] = (root) => {
+  const list = el("div", {});
+  RPC.on("iface.list", (m) => {
+    if (!root.isConnected) return;
+    list.innerHTML = "";
+    (m.interfaces || []).forEach(i => {
+      list.appendChild(el("div", { class: "list-row" },
+        el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, i.name + " ", el("span", { class: "tag" }, i.type || "nic")),
+          el("div", { class: "lr-sub" }, [i.mac, i.ipv4, i.monitor ? "MONITOR" : null].filter(Boolean).join(" · "))),
+        UIKit.btn(i.monitor ? "Disable monitor" : "Enable monitor", () => RPC.send("iface.monitor", { iface: i.name, enable: !i.monitor }), i.monitor ? "ghost" : "")));
+    });
+    if (!(m.interfaces || []).length) list.appendChild(el("div", { class: "hint" }, "no interfaces reported"));
+  });
+  RPC.on("iface.updated", () => RPC.send("iface.list"));
+  RPC.send("iface.list");
+  root.append(UIKit.panel("Interfaces", UIKit.btn("Refresh", () => RPC.send("iface.list"), "ghost"), list));
+};
+
+/* ===================== DAEMON: RAW PACKET INJECTOR ===================== */
+DaemonImpl["packet-injector"] = (root) => {
+  const proto = UIKit.select("Protocol", ["TCP", "UDP", "ICMP", "ARP"]);
+  const iface = UIKit.field("Interface", { placeholder: "eth0", mono: true });
+  const src = UIKit.field("Source", { placeholder: "10.0.0.2:1337", mono: true });
+  const dst = UIKit.field("Destination", { placeholder: "10.0.0.1:80", mono: true });
+  const flags = UIKit.field("TCP flags", { placeholder: "SYN", mono: true });
+  const count = UIKit.field("Count", { type: "number", value: "1", min: "1", max: "1000" });
+  const payload = UIKit.area("Payload (hex or text)", { placeholder: "GET / HTTP/1.0" });
+  const o = UIKit.out();
+  RPC.on(m => /^inject\./.test(m.type || ""), (m) => { if (root.isConnected) o.line(m.type === "inject.ack" ? "✓ sent " + (m.sent || "") + " packet(s)" : "error: " + (m.message || ""), m.type === "inject.ack" ? "ok" : "err"); });
+  const inject = () => { o.clear(); o.line("→ injecting…", "dim"); RPC.send("inject", { proto: proto.input.value, iface: iface.input.value.trim(), src: src.input.value.trim(), dst: dst.input.value.trim(), flags: flags.input.value.trim(), count: +count.input.value, payload: payload.input.value }); };
+  root.append(
+    UIKit.panel("Packet", null, el("div", { class: "toolbar" }, proto.wrap, iface.wrap, count.wrap), el("div", { class: "toolbar" }, src.wrap, dst.wrap, flags.wrap), payload.wrap,
+      el("div", { class: "row" }, UIKit.btn("Inject", inject, "primary"), el("span", { class: "hint" }, "crafted frames are sent by the daemon /inject endpoint"))),
+    UIKit.panel("Result", null, o.node));
+};
+
 /* ===================== SETTINGS (shared) ===================== */
 function renderSettings(node, isIOS) {
   node.innerHTML = "";
@@ -1635,18 +1723,31 @@ function daemonGate(tool) {
       `<small>This tool streams from the local Rust daemon at <code>${Daemon.url}</code>.</small>` }),
     el("div", { class: "btn primary", onclick: () => Daemon.retryNow() }, "Retry connection"));
   const wrap = el("div", {});
-  const stub = stubBody(tool);
+  const body = el("div", { class: "tool-body" });
+  function build() {
+    if (body.dataset.built) return; body.dataset.built = "1";
+    const impl = DaemonImpl[tool.id];
+    try { impl ? impl(body, tool) : body.appendChild(stubBody(tool)); }
+    catch (e) { body.appendChild(el("div", { class: "out err" }, "tool error: " + e.message)); }
+  }
   function sync(s) {
-    if (s === "online") { gate.classList.add("hidden"); stub.classList.remove("hidden"); }
-    else { gate.classList.remove("hidden"); stub.classList.add("hidden"); }
+    if (s === "online") { gate.classList.add("hidden"); body.classList.remove("hidden"); build(); }
+    else { gate.classList.remove("hidden"); body.classList.add("hidden"); }
   }
   Daemon.onStatus(sync); sync(Daemon.state);
-  wrap.appendChild(gate); wrap.appendChild(stub);
+  wrap.appendChild(gate); wrap.appendChild(body);
   return wrap;
 }
 function renderToolView(container, tool) {
   container.innerHTML = "";
   container.appendChild(toolHeader(tool));
+  // Remote Daemon Connector configures the connection — always available.
+  if (tool.id === "remote-daemon") {
+    const body = el("div", { class: "tool-body" });
+    container.appendChild(body);
+    try { DaemonImpl["remote-daemon"](body, tool); } catch (e) { body.appendChild(el("div", { class: "out err" }, e.message)); }
+    return;
+  }
   if (tool.daemon) { container.appendChild(daemonGate(tool)); return; }
   const impl = Impl[tool.id];
   if (impl) { const body = el("div", { class: "tool-body" }); container.appendChild(body); try { impl(body, tool); } catch (e) { body.appendChild(el("div", { class: "out err" }, "tool error: " + e.message)); } }
@@ -1986,7 +2087,7 @@ async function boot() {
     // initial route
     if (!location.hash) location.hash = "#/overview";
     Router.go(Router.parse().route);
-    setTimeout(() => Daemon.connect(), 300);   // begin daemon connection attempts
+    setTimeout(() => Daemon.connect(Settings.get("daemonUrl", undefined)), 300);   // begin daemon connection attempts
   } else {
     // iOS: only universal tools; daemon code is never invoked.
     IOSUI.init(registry.filter(t => t.tier === "universal"));
