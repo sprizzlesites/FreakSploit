@@ -75,10 +75,12 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
 - [x] Desktop Settings route
 - [x] Headless Playwright smoke test (`test/smoke.mjs`) — all routes green
 - [x] README refresh
-- [ ] History store viewer (recent runs per tool) — store exists, no UI yet
-- [ ] Settings: theme accents
-- [ ] Screenshots / GIF in README
+- [x] History store viewer (recent runs per tool) + recording in 5 tools
+- [x] Settings: theme accents (5 presets, persisted)
+- [x] Screenshots in README (docs/*.png, captured via Playwright)
 - [ ] Real sw.js option for full offline navigation (currently blob SW)
+- [ ] More tools recording to History (only 5 wired so far)
+- [ ] Command palette: actions (not just navigation), recent-first ordering
 
 ---
 
@@ -96,7 +98,11 @@ Last updated: 2026-06-24 (session start, autonomous overnight build)
   help overlay (?), desktop Settings route, README refresh, and a headless
   Playwright smoke test (`test/smoke.mjs`) that passes: both modes mount
   with no runtime errors, all 19 routes render, iOS shows zero "daemon".
-  **CORE SUITE COMPLETE.** Remaining are nice-to-haves:
-  **Next up: (1) per-tool run History viewer (history store already exists),
-  (2) theme-accent picker in Settings, (3) screenshots in README,
-  (4) optional standalone sw.js for full offline navigation.**
+  **CORE SUITE COMPLETE.**
+- **S1 (overnight cont.)**: Added theme-accent picker, run-History viewer
+  (+recording in 5 tools), and README screenshots (Playwright-captured,
+  in docs/). Smoke test green at 20 routes. App is feature-complete and
+  visually polished in both modes.
+  **Next up (low priority polish): (1) optional standalone sw.js for full
+  offline navigation, (2) wire History into remaining tools, (3) command
+  palette actions beyond navigation. Otherwise: await user direction.**

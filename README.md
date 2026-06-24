@@ -4,6 +4,12 @@ A single-file, zero-install, browser-based developer & pentesting suite. The
 page itself is always the UI — drop `index.html` on GitHub Pages (or any static
 CDN) and it runs. No build step, no bundler, no npm, no server-side compute.
 
+## Screenshots
+
+| Desktop (multi-pane IDE) | iOS (swipe + tabs) |
+|---|---|
+| ![Desktop overview](docs/desktop-overview.png) | ![iOS tools](docs/ios-tools.png) |
+
 ## Status — Functional suite
 
 The shell **and all 18 tools** are implemented. Browser-native tools run on
