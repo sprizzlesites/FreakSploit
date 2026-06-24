@@ -12,9 +12,8 @@
  *  no daemon is running and is filtered out of the failure count.)
  */
 const PW_PATH = process.env.PW_PATH || 'playwright';
-let chromium;
-try { ({ chromium } = await import(PW_PATH)); }
-catch { chromium = (await import(PW_PATH)).default.chromium; }
+const pwMod = await import(PW_PATH);
+const chromium = pwMod.chromium || (pwMod.default && pwMod.default.chromium);
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -36,7 +35,7 @@ async function page(url) {
 let p = await page(file + '?mode=desktop');
 console.log('DESKTOP navItems=' + await p.locator('#dSidebar .nav-item').count() + ' overviewCards=' + await p.locator('#dMain .card').count());
 
-const ids = ['http-fuzzer','header-inspector','dns-recon','subdomain-enum','jwt-analyzer','hash-cracker','password-gen','ssl-inspector','osint','payload-library','report-builder','packet-analyzer','network-scanner','http-interceptor','exploit-console','interface-manager','packet-injector','remote-daemon','settings'];
+const ids = ['http-fuzzer','header-inspector','dns-recon','subdomain-enum','jwt-analyzer','hash-cracker','password-gen','ssl-inspector','osint','payload-library','report-builder','packet-analyzer','network-scanner','http-interceptor','exploit-console','interface-manager','packet-injector','remote-daemon','history','settings'];
 let fails = 0;
 for (const id of ids) {
   await p.goto(file + '?mode=desktop#/' + id, { waitUntil: 'domcontentloaded' });

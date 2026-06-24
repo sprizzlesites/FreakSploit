@@ -662,6 +662,27 @@ const Settings = {
   async set(k, v) { this.cache[k] = v; try { await DB.set("settings", "app", this.cache); } catch {} },
 };
 
+/* theme accent (persisted) */
+const ACCENTS = { green: ["#34d399", "#1f8e68"], cyan: ["#38bdf8", "#1f6f97"], violet: ["#a78bfa", "#6d54b8"], amber: ["#f5a524", "#9c6a16"], red: ["#f4516c", "#9c3344"] };
+function applyAccent(name) {
+  const [a, d] = ACCENTS[name] || ACCENTS.green;
+  document.documentElement.style.setProperty("--accent", a);
+  document.documentElement.style.setProperty("--accent-dim", d);
+}
+
+/* run history (capped ring buffer in IndexedDB) */
+const History = {
+  async add(tool, summary, detail) {
+    try {
+      const log = (await DB.get("history", "log")) || [];
+      log.unshift({ tool, summary, detail: detail || "", ts: Date.now() });
+      await DB.set("history", "log", log.slice(0, 200));
+    } catch {}
+  },
+  async all() { try { return (await DB.get("history", "log")) || []; } catch { return []; } },
+  async clear() { try { await DB.set("history", "log", []); } catch {} },
+};
+
 /* --------------------------------------------------------------------- *
  *  4. DAEMON WEBSOCKET CONNECTION MANAGER  (desktop tier only)
  * --------------------------------------------------------------------- */
@@ -1058,6 +1079,7 @@ Impl["header-inspector"] = (root) => {
     gradeBox.appendChild(el("div", { class: "row" },
       el("div", { class: "grade " + letter }, letter),
       el("div", {}, el("div", {}, "Security header score"), el("div", { class: "muted" }, score + " / " + max + " weighted checks"))));
+    History.add("Header Inspector", target + " · grade " + letter + " (" + score + "/" + max + ")");
   };
   root.append(
     UIKit.panel("Request", null, url.wrap, el("div", { class: "row" }, UIKit.btn("Inspect headers", run, "primary"))),
@@ -1091,6 +1113,7 @@ Impl["dns-recon"] = (root) => {
       } catch (e) { o.line(type.padEnd(6) + " error: " + e.message, "err"); }
     }
     o.line(""); o.line("done", "ok");
+    History.add("DNS Recon", name + " · " + types.join(","));
   };
   root.append(
     UIKit.panel("Query", null, dom.wrap,
@@ -1149,6 +1172,7 @@ Impl["http-fuzzer"] = (root) => {
         el("td", { class: /anomaly|error/.test(note) ? "sev-high" : "muted" }, note)));
     });
     Toast.show("Done — " + results.length + " requests");
+    History.add("HTTP Fuzzer", u + " · " + results.length + " requests");
   };
   const runBtn = UIKit.btn("Run fuzzer", run, "primary");
   root.append(
@@ -1189,6 +1213,7 @@ Impl["subdomain-enum"] = (root) => {
     for (const r of results) if (r && r.ips && r.ips.length) { found++; o.line(r.host.padEnd(30) + " " + r.ips.join(", "), "ok"); }
     stat.textContent = words.length + " checked · " + found + " found";
     if (!found) o.line("no subdomains resolved", "dim");
+    History.add("Subdomain Enum", base + " · " + found + " of " + words.length + " found");
     pool = null; runBtn.textContent = "Enumerate";
   };
   const runBtn = UIKit.btn("Enumerate", run, "primary");
@@ -1409,6 +1434,7 @@ Impl["hash-cracker"] = (root) => {
     if (found != null) o.line("\n✓ CRACKED: " + found, "ok");
     else if (running) o.line("\n✗ not found", "warn");
     o.line(tried.toLocaleString() + " candidates · " + dt + "s", "dim");
+    History.add("Hash Cracker", (found != null ? "cracked → " + found : "not found") + " (" + algo + ")");
     running = false; runBtn.textContent = "Crack";
   };
   const runBtn = UIKit.btn("Crack", run, "primary");
@@ -1767,6 +1793,23 @@ DaemonImpl["exploit-console"] = (root) => {
     UIKit.panel("Sessions", null, sessWrap));
 };
 
+/* ===================== HISTORY (shared) ===================== */
+async function renderHistory(node) {
+  node.querySelector(".tool-body")?.remove();
+  const listWrap = el("div", {});
+  const body = el("div", { class: "tool-body" }, UIKit.panel("Recent runs", UIKit.btn("Clear", async () => { await History.clear(); draw(); }, "ghost"), listWrap));
+  node.appendChild(body);
+  async function draw() {
+    listWrap.innerHTML = "";
+    const log = await History.all();
+    if (!log.length) { listWrap.appendChild(el("div", { class: "hint" }, "no runs recorded yet — use a tool to populate history")); return; }
+    log.forEach(h => listWrap.appendChild(el("div", { class: "list-row" },
+      el("div", { class: "lr-main" }, el("div", { class: "lr-title" }, h.tool), el("div", { class: "lr-sub" }, h.summary)),
+      el("div", { class: "lr-sub" }, new Date(h.ts).toLocaleString()))));
+  }
+  draw();
+}
+
 /* ===================== SETTINGS (shared) ===================== */
 function renderSettings(node, isIOS) {
   node.innerHTML = "";
@@ -1787,7 +1830,14 @@ function renderSettings(node, isIOS) {
     indexedDB.deleteDatabase("freaksploit");
     Toast.show("Cleared — reload to apply");
   }, "ghost");
+  const swatches = el("div", { class: "chips" }, ...Object.keys(ACCENTS).map(name => {
+    const [c] = ACCENTS[name];
+    const sw = el("div", { class: "chip" + (Settings.get("accent", "green") === name ? " on" : ""), onclick: () => { applyAccent(name); Settings.set("accent", name); $$(".chips .chip", swatches.parentElement).forEach(x => x.classList.remove("on")); sw.classList.add("on"); Toast.show("Accent: " + name); } },
+      el("span", { class: "dot", style: "background:" + c + ";box-shadow:0 0 8px " + c }), " ", name);
+    return sw;
+  }));
   const body = el("div", { class: "tool-body" },
+    UIKit.panel("Appearance", null, el("div", { class: "fld" }, el("label", {}, "Accent color"), swatches)),
     UIKit.panel("Network", null, proxy.wrap, el("div", { class: "hint" }, "use {url} placeholder; lets cross-origin tools (headers, crt.sh) read responses"), doh.wrap),
     UIKit.panel("About", null, about),
     UIKit.panel("Data", null, el("div", { class: "row" }, clearData)));
@@ -1877,6 +1927,7 @@ const DesktopUI = (() => {
       registry.filter(t => t.cat === cat).forEach(t => side.appendChild(navItem(t)));
     }
     side.appendChild(el("div", { class: "nav-group-title" }, "System"));
+    side.appendChild(navItem({ id: "history", name: "History", icon: "🕘" }));
     side.appendChild(navItem({ id: "settings", name: "Settings", icon: "⚙️" }));
     const foot = el("div", { class: "sidebar-foot" },
       `${registry.length} tools • ${Platform.mode} tier`);
@@ -1946,8 +1997,15 @@ const DesktopUI = (() => {
     if (route === "settings") {
       highlight("settings");
       const main = $("#dMain"); main.innerHTML = "";
-      main.appendChild(el("div", { class: "tool-head" }, el("div", { class: "t-ico" }, "⚙️"), el("div", {}, el("h1", {}, "Settings"), el("p", {}, "Network proxy, DoH provider and local data."))));
+      main.appendChild(el("div", { class: "tool-head" }, el("div", { class: "t-ico" }, "⚙️"), el("div", {}, el("h1", {}, "Settings"), el("p", {}, "Appearance, network proxy, DoH provider and local data."))));
       renderSettings(main, false);
+      return;
+    }
+    if (route === "history") {
+      highlight("history");
+      const main = $("#dMain"); main.innerHTML = "";
+      main.appendChild(el("div", { class: "tool-head" }, el("div", { class: "t-ico" }, "🕘"), el("div", {}, el("h1", {}, "History"), el("p", {}, "Recent tool runs recorded locally."))));
+      renderHistory(main);
       return;
     }
     const tool = registry.find(t => t.id === route);
@@ -1991,6 +2049,7 @@ const DesktopUI = (() => {
       return [
         { id: "overview", name: "Overview", icon: "▦", cat: "nav" },
         ...registry.map(t => ({ id: t.id, name: t.name, icon: t.icon, cat: t.cat })),
+        { id: "history", name: "History", icon: "🕘", cat: "system" },
         { id: "settings", name: "Settings", icon: "⚙️", cat: "system" },
       ];
     }
@@ -2045,7 +2104,7 @@ const DesktopUI = (() => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { Palette.open(); e.preventDefault(); return; }
       if (e.target.matches("input,textarea,select")) return;
       if (e.key === "?") { Help.open(); return; }
-      const ids = ["overview", ...registry.map(t => t.id), "settings"];
+      const ids = ["overview", ...registry.map(t => t.id), "history", "settings"];
       const i = ids.indexOf(current);
       if (e.key === "j" || e.key === "ArrowDown") { Router.go(ids[clamp(i + 1, 0, ids.length - 1)]); e.preventDefault(); }
       if (e.key === "k" || e.key === "ArrowUp")   { Router.go(ids[clamp(i - 1, 0, ids.length - 1)]); e.preventDefault(); }
@@ -2240,6 +2299,7 @@ async function boot() {
 
   setBoot(12, "detecting platform…");
   await Settings.load().catch(() => {});
+  applyAccent(Settings.get("accent", "green"));
 
   setBoot(34, "building registry…");
   const registry = buildRegistry();
