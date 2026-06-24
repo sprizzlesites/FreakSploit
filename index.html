@@ -1020,6 +1020,7 @@ Impl["jwt-analyzer"] = (root) => {
       const sig = await crypto.subtle.sign("HMAC", key, Bytes.enc(parts[0] + "." + parts[1]));
       const b64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
       o.line(b64 === parts[2] ? "✓ signature VALID for given secret" : "✗ signature INVALID for given secret", b64 === parts[2] ? "ok" : "err");
+      History.add("JWT Analyzer", alg + " · " + (b64 === parts[2] ? "valid signature" : "invalid signature"));
     } catch (e) { o.line("verify error: " + e.message, "err"); }
   };
   root.append(
@@ -1270,6 +1271,7 @@ Impl["password-gen"] = (root) => {
     if (!generated.length) return Toast.show("Generate first", "err");
     const name = (nameF.input.value.trim() || "wordlist-" + Date.now());
     await DB.set("wordlists", name, { name, words: generated, ts: Date.now() });
+    History.add("Wordlist Builder", "saved " + name + " (" + generated.length + " entries)");
     Toast.show("Saved " + name); refresh();
   };
   const download = () => {
@@ -1489,6 +1491,7 @@ Impl["ssl-inspector"] = (root) => {
       recent.forEach(c => o.line("  • " + (c.name_value || "").split("\n")[0] + "  [" + c.not_before.slice(0, 10) + "]", "dim"));
     } catch (e) { o.line("crt.sh error: " + e.message + " (may need a CORS proxy)", "err"); }
     o.line(""); o.line("ℹ full handshake/cipher/chain inspection requires the desktop daemon", "dim");
+    History.add("SSL/TLS Inspector", host);
   };
   root.append(
     UIKit.panel("Target", null, dom.wrap, el("div", { class: "row" }, UIKit.btn("Inspect", run, "primary"))),
@@ -1525,6 +1528,7 @@ Impl["osint"] = (root) => {
       const recent = data.sort((a, b) => new Date(b.not_before) - new Date(a.not_before)).slice(0, 8);
       recent.forEach(c => certs.line((c.issuer_name || "?").replace(/\n/g, " ").slice(0, 60) + "  [" + c.not_before.slice(0, 10) + "]", "dim"));
     } catch (e) { subs.line("crt.sh error: " + e.message + " (CORS proxy may help)", "err"); }
+    History.add("OSINT Dashboard", host);
   };
   root.append(
     UIKit.panel("Passive recon", null, dom.wrap, el("div", { class: "row" }, UIKit.btn("Gather", run, "primary"), el("span", { class: "hint" }, "passive sources only — no direct contact with the target")),
@@ -1610,6 +1614,7 @@ Impl["report-builder"] = (root) => {
     state.findings.push({ title: fTitle.input.value, sev: fSev.input.value, desc: fDesc.input.value, evidence: fEvi.input.value, remediation: fRem.input.value });
     [fTitle, fDesc, fEvi, fRem].forEach(f => f.input.value = "");
     save(); renderFindings(); Toast.show("Finding added");
+    History.add("Report Builder", "added finding: " + state.findings[state.findings.length - 1].title);
   };
   const preview = () => o.set(reportMarkdown(state));
   const dl = (kind) => {
