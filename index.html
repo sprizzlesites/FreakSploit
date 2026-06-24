@@ -653,6 +653,11 @@ const UNIVERSAL_TOOLS = [
   { id:"json-tools",     name:"JSON Tools",        icon:"🧾", cat:"Crypto", desc:"Format, minify, validate and escape/unescape JSON with precise error locations.", feat:["format","validate","escape"] },
   { id:"shodan-query",   name:"Shodan / Censys Query", icon:"🔭", cat:"Recon", desc:"Build Shodan and Censys search queries from a target with facet chips (port, org, product, cert).", feat:["shodan","censys","facets"] },
   { id:"file-hasher",    name:"File Hasher",       icon:"#️⃣", cat:"Crypto", desc:"Compute SHA-1/256/512 of a picked file for integrity or IOC checks — fully offline.", feat:["SHA-1/256/512","offline","IOC"] },
+  // --- wave 10 ---
+  { id:"diff-tool",      name:"Diff Tool",         icon:"🔀", cat:"Crypto", desc:"Line-level diff of two texts or HTTP responses (Burp-comparer style), highlighting additions and removals.", feat:["LCS diff","responses","offline"] },
+  { id:"url-analyzer",   name:"URL Analyzer",      icon:"📑", cat:"Web", desc:"Break a URL into components, decode every query parameter and auto-decode embedded JWT/base64 values.", feat:["params","decode","JWT/base64"] },
+  { id:"ua-parser",      name:"User-Agent Parser", icon:"🧭", cat:"Recon", desc:"Parse a User-Agent string into browser, engine, OS, device and bot indicators.", feat:["browser/OS","engine","bot"] },
+  { id:"saml-decoder",   name:"SAML Decoder",      icon:"📃", cat:"Crypto", desc:"Decode SAML (base64 + optional DEFLATE), pretty-print the XML and extract issuer, NameID, attributes and validity.", feat:["inflate","NameID","attributes"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".

@@ -17,9 +17,9 @@ desktop and iOS; daemon tools render full protocol UIs that activate when the
 WebSocket is connected. Verified with a headless Playwright smoke test
 (`test/smoke.mjs`): both layouts mount with no runtime errors, all routes render, and the word "daemon" never appears anywhere in the iOS build.
 
-### Tools — 70 universal (iOS + desktop) + 7 daemon-only
+### Tools — 74 universal (iOS + desktop) + 7 daemon-only
 
-**Recon** (21)
+**Recon** (22)
 
 - 🛰️ **DNS Recon** — DNS lookups via public DNS-over-HTTPS resolvers.
 - 🌐 **Subdomain Enum** — Wordlist-driven subdomain brute force via fetch() probing.
@@ -42,8 +42,9 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - 🌎 **IP Intel** — Resolve a host, reverse-DNS (PTR) and pull geolocation/ASN/ISP for an IP.
 - 📧 **Email Permutator** — Generate likely corporate email address formats from a name and domain for OSINT.
 - 🔭 **Shodan / Censys Query** — Build Shodan and Censys search queries from a target with facet chips (port, org, product, cert).
+- 🧭 **User-Agent Parser** — Parse a User-Agent string into browser, engine, OS, device and bot indicators.
 
-**Web** (9)
+**Web** (10)
 
 - 🎯 **HTTP Fuzzer** — Send parameterized requests via fetch(), analyze responses, detect anomalies.
 - 🧪 **Header Inspector** — Analyze HTTP response headers for security misconfigurations (CORS, CSP, HSTS).
@@ -54,6 +55,7 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - ⚠️ **Mixed Content Scanner** — Find insecure http:// resources loaded by an https:// page (scripts, styles, images, forms).
 - 🔗 **SRI Checker** — Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.
 - 🛤️ **HSTS Checker** — Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.
+- 📑 **URL Analyzer** — Break a URL into components, decode every query parameter and auto-decode embedded JWT/base64 values.
 
 **Offense** (26)
 
@@ -84,7 +86,7 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - ↵ **CRLF Injection** — Inject CRLF sequences into a parameter and detect header/response splitting via reflected markers.
 - ⏱️ **Rate / Load Tester** — Fire a burst of concurrent requests to measure rate limiting, status distribution and latency percentiles.
 
-**Crypto** (13)
+**Crypto** (15)
 
 - 🔑 **JWT Analyzer** — Decode, inspect and test JWTs locally via SubtleCrypto.
 - ⛏️ **Hash Cracker** — Dictionary & brute force on hashes via WebAssembly — runs locally.
@@ -99,6 +101,8 @@ WebSocket is connected. Verified with a headless Playwright smoke test
 - 📦 **File Type ID** — Identify a file's true type from its magic bytes — spot mismatched extensions, offline.
 - 🧾 **JSON Tools** — Format, minify, validate and escape/unescape JSON with precise error locations.
 - #️⃣ **File Hasher** — Compute SHA-1/256/512 of a picked file for integrity or IOC checks — fully offline.
+- 🔀 **Diff Tool** — Line-level diff of two texts or HTTP responses (Burp-comparer style), highlighting additions and removals.
+- 📃 **SAML Decoder** — Decode SAML (base64 + optional DEFLATE), pretty-print the XML and extract issuer, NameID, attributes and validity.
 
 **Output** (1)
 
