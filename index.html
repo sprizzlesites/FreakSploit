@@ -1285,6 +1285,110 @@ Impl["payload-library"] = (root) => {
     UIKit.panel("Add custom", null, el("div", { class: "row" }, newP.wrap, UIKit.btn("Add", addCustom))));
 };
 
+/* ===================== HASH CRACKER ===================== */
+/* compact MD5 (blueimp, public domain) for the one digest SubtleCrypto lacks */
+function md5(string) {
+  function sa(x, y) { const l = (x & 0xFFFF) + (y & 0xFFFF); return (((x >> 16) + (y >> 16) + (l >> 16)) << 16) | (l & 0xFFFF); }
+  function rol(n, c) { return (n << c) | (n >>> (32 - c)); }
+  function cmn(q, a, b, x, s, t) { return sa(rol(sa(sa(a, q), sa(x, t)), s), b); }
+  const ff = (a, b, c, d, x, s, t) => cmn((b & c) | (~b & d), a, b, x, s, t);
+  const gg = (a, b, c, d, x, s, t) => cmn((b & d) | (c & ~d), a, b, x, s, t);
+  const hh = (a, b, c, d, x, s, t) => cmn(b ^ c ^ d, a, b, x, s, t);
+  const ii = (a, b, c, d, x, s, t) => cmn(c ^ (b | ~d), a, b, x, s, t);
+  function core(x, len) {
+    x[len >> 5] |= 0x80 << (len % 32); x[(((len + 64) >>> 9) << 4) + 14] = len;
+    let a = 1732584193, b = -271733879, c = -1732584194, d = 271733878;
+    for (let i = 0; i < x.length; i += 16) {
+      const oa = a, ob = b, oc = c, od = d;
+      a = ff(a, b, c, d, x[i], 7, -680876936); d = ff(d, a, b, c, x[i + 1], 12, -389564586); c = ff(c, d, a, b, x[i + 2], 17, 606105819); b = ff(b, c, d, a, x[i + 3], 22, -1044525330);
+      a = ff(a, b, c, d, x[i + 4], 7, -176418897); d = ff(d, a, b, c, x[i + 5], 12, 1200080426); c = ff(c, d, a, b, x[i + 6], 17, -1473231341); b = ff(b, c, d, a, x[i + 7], 22, -45705983);
+      a = ff(a, b, c, d, x[i + 8], 7, 1770035416); d = ff(d, a, b, c, x[i + 9], 12, -1958414417); c = ff(c, d, a, b, x[i + 10], 17, -42063); b = ff(b, c, d, a, x[i + 11], 22, -1990404162);
+      a = ff(a, b, c, d, x[i + 12], 7, 1804603682); d = ff(d, a, b, c, x[i + 13], 12, -40341101); c = ff(c, d, a, b, x[i + 14], 17, -1502002290); b = ff(b, c, d, a, x[i + 15], 22, 1236535329);
+      a = gg(a, b, c, d, x[i + 1], 5, -165796510); d = gg(d, a, b, c, x[i + 6], 9, -1069501632); c = gg(c, d, a, b, x[i + 11], 14, 643717713); b = gg(b, c, d, a, x[i], 20, -373897302);
+      a = gg(a, b, c, d, x[i + 5], 5, -701558691); d = gg(d, a, b, c, x[i + 10], 9, 38016083); c = gg(c, d, a, b, x[i + 15], 14, -660478335); b = gg(b, c, d, a, x[i + 4], 20, -405537848);
+      a = gg(a, b, c, d, x[i + 9], 5, 568446438); d = gg(d, a, b, c, x[i + 14], 9, -1019803690); c = gg(c, d, a, b, x[i + 3], 14, -187363961); b = gg(b, c, d, a, x[i + 8], 20, 1163531501);
+      a = gg(a, b, c, d, x[i + 13], 5, -1444681467); d = gg(d, a, b, c, x[i + 2], 9, -51403784); c = gg(c, d, a, b, x[i + 7], 14, 1735328473); b = gg(b, c, d, a, x[i + 12], 20, -1926607734);
+      a = hh(a, b, c, d, x[i + 5], 4, -378558); d = hh(d, a, b, c, x[i + 8], 11, -2022574463); c = hh(c, d, a, b, x[i + 11], 16, 1839030562); b = hh(b, c, d, a, x[i + 14], 23, -35309556);
+      a = hh(a, b, c, d, x[i + 1], 4, -1530992060); d = hh(d, a, b, c, x[i + 4], 11, 1272893353); c = hh(c, d, a, b, x[i + 7], 16, -155497632); b = hh(b, c, d, a, x[i + 10], 23, -1094730640);
+      a = hh(a, b, c, d, x[i + 13], 4, 681279174); d = hh(d, a, b, c, x[i], 11, -358537222); c = hh(c, d, a, b, x[i + 3], 16, -722521979); b = hh(b, c, d, a, x[i + 6], 23, 76029189);
+      a = hh(a, b, c, d, x[i + 9], 4, -640364487); d = hh(d, a, b, c, x[i + 12], 11, -421815835); c = hh(c, d, a, b, x[i + 15], 16, 530742520); b = hh(b, c, d, a, x[i + 2], 23, -995338651);
+      a = ii(a, b, c, d, x[i], 6, -198630844); d = ii(d, a, b, c, x[i + 7], 10, 1126891415); c = ii(c, d, a, b, x[i + 14], 15, -1416354905); b = ii(b, c, d, a, x[i + 5], 21, -57434055);
+      a = ii(a, b, c, d, x[i + 12], 6, 1700485571); d = ii(d, a, b, c, x[i + 3], 10, -1894986606); c = ii(c, d, a, b, x[i + 10], 15, -1051523); b = ii(b, c, d, a, x[i + 1], 21, -2054922799);
+      a = ii(a, b, c, d, x[i + 8], 6, 1873313359); d = ii(d, a, b, c, x[i + 15], 10, -30611744); c = ii(c, d, a, b, x[i + 6], 15, -1560198380); b = ii(b, c, d, a, x[i + 13], 21, 1309151649);
+      a = ii(a, b, c, d, x[i + 4], 6, -145523070); d = ii(d, a, b, c, x[i + 11], 10, -1120210379); c = ii(c, d, a, b, x[i + 2], 15, 718787259); b = ii(b, c, d, a, x[i + 9], 21, -343485551);
+      a = sa(a, oa); b = sa(b, ob); c = sa(c, oc); d = sa(d, od);
+    }
+    return [a, b, c, d];
+  }
+  function bin2rstr(inp) { let o = ""; for (let i = 0; i < inp.length * 32; i += 8) o += String.fromCharCode((inp[i >> 5] >>> (i % 32)) & 0xFF); return o; }
+  function rstr2bin(inp) { const o = []; for (let i = 0; i < (inp.length >> 2) + 1; i++) o[i] = 0; for (let i = 0; i < inp.length * 8; i += 8) o[i >> 5] |= (inp.charCodeAt(i / 8) & 0xFF) << (i % 32); return o; }
+  const r = unescape(encodeURIComponent(string));
+  const h = bin2rstr(core(rstr2bin(r), r.length * 8));
+  let out = ""; for (let i = 0; i < h.length; i++) { const x = h.charCodeAt(i); out += "0123456789abcdef"[(x >>> 4) & 15] + "0123456789abcdef"[x & 15]; }
+  return out;
+}
+async function hashStr(algo, str) {
+  if (algo === "MD5") return md5(str);
+  return Bytes.toHex(await crypto.subtle.digest(algo, Bytes.enc(str)));
+}
+function detectHash(h) {
+  return ({ 32: "MD5", 40: "SHA-1", 64: "SHA-256", 96: "SHA-384", 128: "SHA-512" })[h.length] || null;
+}
+Impl["hash-cracker"] = (root) => {
+  const hashF = UIKit.field("Target hash", { placeholder: "5f4dcc3b5aa765d61d8327deb882cf99", mono: true });
+  const algoF = UIKit.select("Algorithm", [["auto", "auto-detect"], "MD5", "SHA-1", "SHA-256", "SHA-384", "SHA-512"]);
+  const mode = UIKit.select("Mode", [["dict", "dictionary"], ["brute", "brute force"]]);
+  const wl = UIKit.area("Dictionary (one per line)", { value: "password\n123456\nadmin\nletmein\nqwerty\nmonkey\ndragon\nfootball" });
+  const charset = UIKit.select("Charset", [["abcdefghijklmnopqrstuvwxyz", "a-z"], ["abcdefghijklmnopqrstuvwxyz0123456789", "a-z 0-9"], ["abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", "alnum"]]);
+  const maxLen = UIKit.field("Max length", { type: "number", value: "4", min: "1", max: "6" });
+  const bar = el("i", {}); const prog = el("div", { class: "bar" }, bar);
+  const o = UIKit.out();
+  let running = false;
+  const dictWrap = el("div", {}, wl.wrap);
+  const bruteWrap = el("div", { class: "toolbar hidden" }, charset.wrap, maxLen.wrap);
+  mode.input.addEventListener("change", () => { const d = mode.input.value === "dict"; dictWrap.classList.toggle("hidden", !d); bruteWrap.classList.toggle("hidden", d); });
+  const stop = () => { running = false; };
+  const run = async () => {
+    if (running) return stop();
+    o.clear(); bar.style.width = "0";
+    const target = hashF.input.value.trim().toLowerCase();
+    if (!/^[0-9a-f]+$/.test(target)) return o.line("hash must be hex", "err");
+    let algo = algoF.input.value; if (algo === "auto") { algo = detectHash(target); if (!algo) return o.line("can't auto-detect length " + target.length, "err"); o.line("detected " + algo, "dim"); }
+    running = true; runBtn.textContent = "Stop"; const t0 = performance.now();
+    let found = null, tried = 0;
+    const test = async (cand) => { tried++; if ((await hashStr(algo, cand)) === target) { found = cand; return true; } return false; };
+    if (mode.input.value === "dict") {
+      const words = wl.input.value.split("\n").map(s => s.trim()).filter(Boolean);
+      for (let i = 0; i < words.length && running; i++) {
+        if (await test(words[i])) break;
+        if (i % 200 === 0) { bar.style.width = (i / words.length * 100) + "%"; await new Promise(r => setTimeout(r)); }
+      }
+    } else {
+      const cs = charset.input.value, ml = clamp(+maxLen.input.value || 3, 1, 6), CAP = 4000000;
+      outer: for (let len = 1; len <= ml && running; len++) {
+        const idx = new Array(len).fill(0);
+        while (running) {
+          let cand = ""; for (let k = 0; k < len; k++) cand += cs[idx[k]];
+          if (await test(cand)) break outer;
+          if (tried >= CAP) { o.line("hit attempt cap (" + CAP.toLocaleString() + ")", "warn"); break outer; }
+          if (tried % 5000 === 0) { bar.style.width = (tried / CAP * 100) + "%"; await new Promise(r => setTimeout(r)); }
+          let p = len - 1; while (p >= 0) { if (++idx[p] < cs.length) break; idx[p] = 0; p--; } if (p < 0) break;
+        }
+      }
+    }
+    const dt = ((performance.now() - t0) / 1000).toFixed(2);
+    if (found != null) o.line("\n✓ CRACKED: " + found, "ok");
+    else if (running) o.line("\n✗ not found", "warn");
+    o.line(tried.toLocaleString() + " candidates · " + dt + "s", "dim");
+    running = false; runBtn.textContent = "Crack";
+  };
+  const runBtn = UIKit.btn("Crack", run, "primary");
+  root.append(
+    UIKit.panel("Hash", null, el("div", { class: "toolbar" }, hashF.wrap, algoF.wrap, mode.wrap)),
+    UIKit.panel("Attack", null, dictWrap, bruteWrap, el("div", { class: "row" }, runBtn), prog),
+    UIKit.panel("Result", null, o.node));
+};
+
 /* --------------------------------------------------------------------- *
  *  Shared tool-view renderer (used by desktop main + reused content)
  * --------------------------------------------------------------------- */
