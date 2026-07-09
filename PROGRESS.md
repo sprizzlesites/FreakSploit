@@ -4,6 +4,32 @@
 > `[ ]` item under "Build queue", and implement it. Update this file + commit
 > after each tool. This is the single source of truth across sessions.
 
+## ✅ ICON SYSTEM: emoji logos → real inline SVG icons
+Replaced every emoji "logo" (all 81 tool icons + tab bar + sidebar system
+nav + command palette + daemon-gate/banner/stub chrome icons) with a
+hand-built `IconKit` — inline SVG, no icon font/CDN (stays single-file).
+- `ICONS` object (~66 keys) in `index.html` near the `el()` helper: 55
+  primitive line-icons (circle/rect/line/polyline/simple arcs, 24x24
+  viewBox, stroke=currentColor) + 11 monospace "glyph" icons (`g-json`
+  `{ }`, `g-hex` `0x`, `g-shell` `$_`, `g-diff` `Δ`, `g-console` `>_`,
+  `g-traversal` `../`, `g-template` `{{}}`, `g-binary` `01`, `g-regex`
+  `/…/`, `g-xml` `<>`, `g-fuzz` unused/spare) rendered via SVG `<text>`.
+- `Icon(key, sizePx)` → `<span class="ico-svg" style="width/height">`.
+  All 8 render call sites (`.t-ico`, `.ico` nav, `.c-ico` card, `.pi-ico`
+  palette, `.at-ico` iOS tile, iOS pager `.t-ico`, `.tb-ico` tab, banner)
+  swapped from raw emoji text to `Icon(...)`.
+- Tool registry `icon:"🔓"` → `icon:"unlock"` etc. for all 81 entries
+  (id→key map applied via a scripted regex pass, not by hand).
+- iOS springboard tiles tinted `var(--accent)` with a soft glow filter —
+  the "glowing HUD tile" look the redesign wanted.
+- Verified: rendered a standalone icon atlas (all 66 keys at 40px) +
+  live app screenshots (desktop sidebar/cards/palette, iOS grid/tool/tab
+  bar, daemon gate) — 0 empty/broken `<svg>` nodes across 165 desktop +
+  78 iOS icon instances. One weak glyph (`http-fuzzer`'s "?*") swapped
+  for the clearer "bolt" icon after a close-up legibility check.
+- All 4 Playwright suites still green after the change.
+- Screenshots refreshed: docs/desktop-overview.png, docs/ios-home.png.
+
 ## ✅ iOS REDESIGN DONE (this session)
 Retro-HUD restyle of the iOS view. New landing = **springboard app grid**
 (`data-sec="home"`) grouped by category with live search; tapping a tile

@@ -75,6 +75,10 @@ a:hover { text-decoration: underline; }
 
 /* status dot helper */
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* inline SVG icon wrapper (IconKit) */
+.ico-svg { display: inline-flex; align-items: center; justify-content: center; flex: none; line-height: 0; }
+.ico-svg svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .dot.green { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .dot.red   { background: var(--red);   box-shadow: 0 0 8px var(--red); }
@@ -307,11 +311,11 @@ body[data-mode="ios"] #app.desktop { display: none; }
 .app-tile .at-ico {
   width: 60px; height: 60px; border-radius: 17px; display: grid; place-items: center; font-size: 29px; position: relative;
   background: linear-gradient(155deg, var(--bg-3), var(--bg-1) 70%);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line); color: var(--accent);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 5px 16px -10px #000;
   transition: transform .12s ease, border-color .12s, box-shadow .12s;
 }
-.app-tile .at-ico > span { filter: drop-shadow(0 0 6px rgba(0,0,0,.5)); }
+.app-tile .at-ico > span { filter: drop-shadow(0 0 5px rgba(52,211,153,.35)); }
 .app-tile .at-ico::after {
   content: ""; position: absolute; inset: 7px; border-radius: 11px; opacity: 0; transition: opacity .15s;
   background:
@@ -567,7 +571,7 @@ body[data-mode="ios"] #app.desktop { display: none; }
 
 <!-- ===================== BANNER ===================== -->
 <div id="banner">
-  <span class="bn-ico" id="bnIco">⚡</span>
+  <span class="bn-ico" id="bnIco"></span>
   <div class="bn-txt" id="bnTxt"></div>
   <span class="bn-close" id="bnClose">✕</span>
 </div>
@@ -600,6 +604,96 @@ const el = (tag, attrs = {}, ...kids) => {
 };
 const now = () => new Date().toTimeString().slice(0, 8);
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+/* --------------------------------------------------------------------- *
+ *  IconKit — inline SVG line-icon set (single-file: no icon font/CDN).
+ *  Every "icon" field in the tool registry is a key into ICONS below.
+ *  Shapes are drawn from primitives (circle/rect/line/polyline/simple
+ *  arcs) plus a handful of monospace "glyph" icons (g-*) for symbolic
+ *  dev-tool concepts, matching the retro-terminal aesthetic.
+ * --------------------------------------------------------------------- */
+const ICONS = {
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>',
+  crosshair: '<circle cx="12" cy="12" r="7"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>',
+  key: '<circle cx="7" cy="12" r="3.4"/><line x1="10.2" y1="12" x2="21" y2="12"/><line x1="17" y1="12" x2="17" y2="16"/><line x1="20" y1="12" x2="20" y2="15"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.2-2.4"/>',
+  shield: '<path d="M12 3 19 6 V11 C19 16 16 19.5 12 21 C8 19.5 5 16 5 11 V6 Z"/>',
+  "shield-alert": '<path d="M12 3 19 6 V11 C19 16 16 19.5 12 21 C8 19.5 5 16 5 11 V6 Z"/><line x1="12" y1="8.5" x2="12" y2="12.5"/><circle cx="12" cy="15.5" r="0.6" fill="currentColor" stroke="none"/>',
+  bug: '<ellipse cx="12" cy="14" rx="5" ry="6"/><circle cx="12" cy="5.5" r="2.2"/><line x1="7" y1="10" x2="3" y2="8"/><line x1="7" y1="14" x2="2" y2="14"/><line x1="7" y1="18" x2="3" y2="20"/><line x1="17" y1="10" x2="21" y2="8"/><line x1="17" y1="14" x2="22" y2="14"/><line x1="17" y1="18" x2="21" y2="20"/><line x1="10.5" y1="4" x2="9" y2="1.5"/><line x1="13.5" y1="4" x2="15" y2="1.5"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><polyline points="7,9 10.5,12 7,15"/><line x1="12" y1="15" x2="16.5" y2="15"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><line x1="3" y1="12" x2="21" y2="12"/>',
+  wifi: '<path d="M5 9a10 10 0 0 1 14 0"/><path d="M7.8 12.5a6.2 6.2 0 0 1 8.4 0"/><path d="M10.4 16a2.6 2.6 0 0 1 3.2 0"/><circle cx="12" cy="19" r="0.8" fill="currentColor" stroke="none"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3,7 12,13 21,7"/>',
+  radar: '<circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><line x1="12" y1="12" x2="18" y2="7"/>',
+  database: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  server: '<rect x="3" y="4" width="18" height="7" rx="1.8"/><rect x="3" y="13" width="18" height="7" rx="1.8"/><circle cx="7" cy="7.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="7" cy="16.5" r="0.8" fill="currentColor" stroke="none"/>',
+  eye: '<path d="M2 12S6 5 12 5s10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  flag: '<line x1="5" y1="3" x2="5" y2="21"/><path d="M5 4h13l-3.2 4L18 12H5Z"/>',
+  camera: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8.5 7 10 4h4l1.5 3"/><circle cx="12" cy="13.5" r="4"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><polyline points="3,17 9,11 13,15 16,12 21,17"/>',
+  "file-text": '<path d="M6 2h9l5 5v15H6Z"/><path d="M15 2v5h5"/><line x1="9" y1="13" x2="16" y2="13"/><line x1="9" y1="17" x2="16" y2="17"/>',
+  folder: '<path d="M3 6.5h6.5l2 2.5H21v11H3Z"/>',
+  grid: '<rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="8" rx="1.6"/><rect x="3" y="13" width="8" height="8" rx="1.6"/><rect x="13" y="13" width="8" height="8" rx="1.6"/>',
+  gear: '<circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8.5"/><g stroke-dasharray="1.4 2.55"><circle cx="12" cy="12" r="8.5" stroke-width="3.4"/></g>',
+  clock: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="12" x2="12" y2="7"/><line x1="12" y1="12" x2="16" y2="14"/>',
+  book: '<path d="M4 5c3-1.6 6-1.6 8 0v15c-2-1.6-5-1.6-8 0Z"/><path d="M20 5c-3-1.6-6-1.6-8 0v15c2-1.6 5-1.6 8 0Z"/>',
+  clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2" width="6" height="3" rx="1"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="16" y2="15"/>',
+  link: '<rect x="2.3" y="10" width="9" height="4" rx="2" transform="rotate(-45 6.8 12)"/><rect x="12.7" y="10" width="9" height="4" rx="2" transform="rotate(-45 17.2 12)"/>',
+  share: '<circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><line x1="8.2" y1="10.8" x2="15.8" y2="6.2"/><line x1="8.2" y1="13.2" x2="15.8" y2="17.8"/>',
+  download: '<line x1="12" y1="3" x2="12" y2="15"/><polyline points="7,10 12,15 17,10"/><line x1="4" y1="20" x2="20" y2="20"/>',
+  upload: '<line x1="12" y1="15" x2="12" y2="3"/><polyline points="7,8 12,3 17,8"/><line x1="4" y1="20" x2="20" y2="20"/>',
+  repeat: '<polyline points="17,2 21,6 17,10"/><line x1="21" y1="6" x2="7" y2="6"/><polyline points="7,22 3,18 7,14"/><line x1="3" y1="18" x2="17" y2="18"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="M12 8 14.2 12 12 16 9.8 12Z"/>',
+  calculator: '<rect x="4" y="2" width="16" height="20" rx="2"/><rect x="6.5" y="4.5" width="11" height="4.5" rx="1"/><circle cx="8" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="16" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="0.9" fill="currentColor" stroke="none"/>',
+  cpu: '<rect x="7" y="7" width="10" height="10" rx="1.4"/><rect x="9.5" y="9.5" width="5" height="5" rx="0.6"/><line x1="9" y1="2" x2="9" y2="7"/><line x1="15" y1="2" x2="15" y2="7"/><line x1="9" y1="17" x2="9" y2="22"/><line x1="15" y1="17" x2="15" y2="22"/><line x1="2" y1="9" x2="7" y2="9"/><line x1="2" y1="15" x2="7" y2="15"/><line x1="17" y1="9" x2="22" y2="9"/><line x1="17" y1="15" x2="22" y2="15"/>',
+  box: '<path d="M12 2 21 7 12 12 3 7Z"/><path d="M3 7V17L12 22V12"/><path d="M21 7V17L12 22"/>',
+  "git-branch": '<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="9" r="2.2"/><line x1="6" y1="8.2" x2="6" y2="15.8"/><path d="M6 10c0 4 6 3.5 12 1.3"/>',
+  users: '<circle cx="9" cy="8" r="3.2"/><path d="M3.3 20c0-4.4 2.6-7 5.7-7s5.7 2.6 5.7 7"/><circle cx="17.5" cy="9.2" r="2.4"/><path d="M14.5 20c.2-3.4 2-6 5-6.4"/>',
+  card: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><rect x="5" y="14" width="4" height="2" rx="0.5" fill="currentColor" stroke="none"/>',
+  "map-pin": '<path d="M12 21S5 14 5 9a7 7 0 0 1 14 0c0 5-7 12-7 12Z"/><circle cx="12" cy="9" r="2.4"/>',
+  phone: '<rect x="7" y="2" width="10" height="20" rx="2.4"/><line x1="10" y1="18" x2="14" y2="18"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="1.8"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/>',
+  cloud: '<path d="M17.5 18.5H8a4.5 4.5 0 0 1-.6-8.96 5 5 0 0 1 9.5-2.06A4.2 4.2 0 0 1 17.5 18.5Z"/>',
+  bolt: '<polygon points="13,2 4,14 11,14 10,22 20,10 13,10"/>',
+  layers: '<polygon points="12,3 21,8 12,13 3,8"/><polyline points="3,12 12,17 21,12"/><polyline points="3,16 12,21 21,16"/>',
+  hash: '<line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>',
+  octagon: '<polygon points="8,2 16,2 22,8 22,16 16,22 8,22 2,16 2,8"/>',
+  "alert-triangle": '<polygon points="12,3 22,20 2,20"/><line x1="12" y1="9" x2="12" y2="14.5"/><circle cx="12" cy="17" r="0.7" fill="currentColor" stroke="none"/>',
+  waypoints: '<circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6.6 7.4 10.7 17.3" stroke-dasharray="1.6 2.2"/><path d="M17.4 7.4 13.3 17.3" stroke-dasharray="1.6 2.2"/>',
+  flask: '<path d="M10 2h4"/><path d="M10.5 2v7L4.8 19.5A2 2 0 0 0 6.6 22.5h10.8a2 2 0 0 0 1.8-3L13.5 9V2"/><line x1="7.5" y1="15" x2="16.5" y2="15"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.3" y1="15.3" x2="21" y2="21"/>',
+  cookie: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="8.5" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="9.5" cy="15" r="1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="11.5" r="1" fill="currentColor" stroke="none"/>',
+  diamond: '<polygon points="12,2 22,12 12,22 2,12"/>',
+  plug: '<line x1="9" y1="2" x2="9" y2="8"/><line x1="15" y1="2" x2="15" y2="8"/><rect x="6" y="8" width="12" height="8" rx="2.4"/><line x1="12" y1="16" x2="12" y2="22"/>',
+  list: '<circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/>',
+  filter: '<path d="M4 4h16l-6 8v7l-4 2v-9Z"/>',
+  "g-json": 'GLYPH:{ }',
+  "g-hex": 'GLYPH:0x',
+  "g-shell": 'GLYPH:$_',
+  "g-diff": 'GLYPH:Δ',
+  "g-fuzz": 'GLYPH:?*',
+  "g-console": 'GLYPH:>_',
+  "g-traversal": 'GLYPH:../',
+  "g-template": 'GLYPH:{{}}',
+  "g-binary": 'GLYPH:01',
+  "g-regex": 'GLYPH:/…/',
+  "g-xml": 'GLYPH:<>',
+};
+function iconMarkup(key) {
+  const body = ICONS[key] || ICONS.target;
+  if (body.startsWith("GLYPH:")) {
+    const txt = body.slice(6);
+    const size = txt.length > 3 ? 7 : 9;
+    return `<svg viewBox="0 0 24 24"><text x="12" y="15.5" text-anchor="middle" font-family="var(--mono),monospace" font-weight="700" font-size="${size}" fill="currentColor">${txt}</text></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+}
+function Icon(key, size = 20, cls = "") {
+  const span = el("span", { class: "ico-svg" + (cls ? " " + cls : ""), html: iconMarkup(key) });
+  span.style.width = size + "px"; span.style.height = size + "px";
+  return span;
+}
 
 /* --------------------------------------------------------------------- *
  *  1. PLATFORM DETECTION & CAPABILITY TIERS
@@ -643,104 +737,104 @@ const Platform = (() => {
  *                       iOS, so iOS never loads desktop-only logic.
  */
 const UNIVERSAL_TOOLS = [
-  { id:"http-fuzzer",   name:"HTTP Fuzzer",        icon:"🎯", cat:"Web",     desc:"Send parameterized requests via fetch(), analyze responses, detect anomalies.", feat:["fetch()","diff engine","payload sets"] },
-  { id:"header-inspector", name:"Header Inspector", icon:"🧪", cat:"Web",    desc:"Analyze HTTP response headers for security misconfigurations (CORS, CSP, HSTS).", feat:["CORS","CSP","HSTS","grading"] },
-  { id:"dns-recon",     name:"DNS Recon",          icon:"🛰️", cat:"Recon",   desc:"DNS lookups via public DNS-over-HTTPS resolvers.", feat:["DoH","A/AAAA/MX/TXT","PTR"] },
-  { id:"subdomain-enum", name:"Subdomain Enum",    icon:"🌐", cat:"Recon",   desc:"Wordlist-driven subdomain brute force via fetch() probing.", feat:["wordlists","concurrency","wildcard filter"] },
-  { id:"jwt-analyzer",  name:"JWT Analyzer",       icon:"🔑", cat:"Crypto",  desc:"Decode, inspect and test JWTs locally via SubtleCrypto.", feat:["decode","alg checks","HS/RS verify"] },
-  { id:"hash-cracker",  name:"Hash Cracker",       icon:"⛏️", cat:"Crypto",  desc:"Dictionary & brute force on hashes via WebAssembly — runs locally.", feat:["WASM","dictionary","brute force"] },
-  { id:"password-gen",  name:"Password / Wordlist", icon:"🧬", cat:"Crypto", desc:"Rule-based wordlist & password generation, saved to IndexedDB.", feat:["rules","mutations","IndexedDB"] },
-  { id:"ssl-inspector", name:"SSL/TLS Inspector",  icon:"🔒", cat:"Web",     desc:"Analyze cert chains via fetch() + WebSocket probing.", feat:["cert chain","ciphers","expiry"] },
-  { id:"osint",         name:"OSINT Dashboard",    icon:"🔎", cat:"Recon",   desc:"Passive recon aggregator over public APIs (crt.sh, whois, Shodan).", feat:["crt.sh","whois","aggregation"] },
-  { id:"payload-library", name:"Payload Library",  icon:"📚", cat:"Web",     desc:"Curated XSS / SQLi / LFI payload sets, filterable, copy-to-clipboard.", feat:["XSS","SQLi","LFI","copy"] },
-  { id:"report-builder", name:"Report Builder",    icon:"📝", cat:"Output",  desc:"Structured markdown/HTML pentest report generator, exports to file.", feat:["markdown","HTML export","templates"] },
+  { id:"http-fuzzer",   name:"HTTP Fuzzer",        icon:"bolt", cat:"Web",     desc:"Send parameterized requests via fetch(), analyze responses, detect anomalies.", feat:["fetch()","diff engine","payload sets"] },
+  { id:"header-inspector", name:"Header Inspector", icon:"clipboard", cat:"Web",    desc:"Analyze HTTP response headers for security misconfigurations (CORS, CSP, HSTS).", feat:["CORS","CSP","HSTS","grading"] },
+  { id:"dns-recon",     name:"DNS Recon",          icon:"globe", cat:"Recon",   desc:"DNS lookups via public DNS-over-HTTPS resolvers.", feat:["DoH","A/AAAA/MX/TXT","PTR"] },
+  { id:"subdomain-enum", name:"Subdomain Enum",    icon:"share", cat:"Recon",   desc:"Wordlist-driven subdomain brute force via fetch() probing.", feat:["wordlists","concurrency","wildcard filter"] },
+  { id:"jwt-analyzer",  name:"JWT Analyzer",       icon:"key", cat:"Crypto",  desc:"Decode, inspect and test JWTs locally via SubtleCrypto.", feat:["decode","alg checks","HS/RS verify"] },
+  { id:"hash-cracker",  name:"Hash Cracker",       icon:"g-hex", cat:"Crypto",  desc:"Dictionary & brute force on hashes via WebAssembly — runs locally.", feat:["WASM","dictionary","brute force"] },
+  { id:"password-gen",  name:"Password / Wordlist", icon:"list", cat:"Crypto", desc:"Rule-based wordlist & password generation, saved to IndexedDB.", feat:["rules","mutations","IndexedDB"] },
+  { id:"ssl-inspector", name:"SSL/TLS Inspector",  icon:"lock", cat:"Web",     desc:"Analyze cert chains via fetch() + WebSocket probing.", feat:["cert chain","ciphers","expiry"] },
+  { id:"osint",         name:"OSINT Dashboard",    icon:"eye", cat:"Recon",   desc:"Passive recon aggregator over public APIs (crt.sh, whois, Shodan).", feat:["crt.sh","whois","aggregation"] },
+  { id:"payload-library", name:"Payload Library",  icon:"book", cat:"Web",     desc:"Curated XSS / SQLi / LFI payload sets, filterable, copy-to-clipboard.", feat:["XSS","SQLi","LFI","copy"] },
+  { id:"report-builder", name:"Report Builder",    icon:"file-text", cat:"Output",  desc:"Structured markdown/HTML pentest report generator, exports to file.", feat:["markdown","HTML export","templates"] },
   // --- Offense: active testing tools for finding common vibe-coded bugs (test your own apps) ---
-  { id:"secret-scanner", name:"Secret Scanner",    icon:"🔓", cat:"Offense", desc:"Fetch a site's HTML + JS bundles + source maps and hunt leaked API keys, env vars and tokens.", feat:["JS bundle scan","key regexes","source maps"] },
-  { id:"request-forge",  name:"Request Forge",     icon:"🛠️", cat:"Offense", desc:"Build, tamper and replay any HTTP request; import from cURL; inspect responses (repeater).", feat:["cURL import","replay","headers"] },
-  { id:"ws-workbench",   name:"WebSocket Workbench", icon:"📨", cat:"Offense", desc:"Connect to a WebSocket endpoint to sniff live frames and inject or fuzz crafted messages.", feat:["live sniff","inject","fuzz"] },
-  { id:"auth-lab",       name:"Auth / Token Lab",  icon:"🪪", cat:"Offense", desc:"Forge & tamper JWTs (alg:none, role→admin, resign), inject into requests and compare access.", feat:["alg:none","role escalation","token replay"] },
-  { id:"param-tamper",   name:"Param / Price Tamper", icon:"🏷️", cat:"Offense", desc:"Auto-mutate price, quantity, role and id fields, replay, and flag when the server trusts client values.", feat:["price→0","role→admin","mass assignment"] },
-  { id:"injection-tester", name:"Injection Tester", icon:"🧨", cat:"Offense", desc:"Probe params for SQLi / NoSQLi / SSTI / command injection with error, boolean, time-based and reflection detection.", feat:["SQLi","NoSQLi","SSTI","time-based"] },
-  { id:"idor-probe",     name:"IDOR / Access Probe", icon:"🎫", cat:"Offense", desc:"Enumerate neighbouring object IDs and compare authed vs unauthed responses to find broken access control.", feat:["id enum","authz diff","BOLA"] },
-  { id:"cors-tester",    name:"CORS Tester",       icon:"🌍", cat:"Offense", desc:"Detect exploitable CORS misconfigurations — wildcard, reflected origin and credentialed cross-origin access.", feat:["ACAO","credentials","reflection"] },
-  { id:"api-discovery",  name:"API / Endpoint Discovery", icon:"🗝️", cat:"Offense", desc:"Probe for exposed sensitive paths — .env, .git, source maps, swagger/OpenAPI and GraphQL introspection.", feat:[".env/.git","swagger","graphql introspection"] },
+  { id:"secret-scanner", name:"Secret Scanner",    icon:"unlock", cat:"Offense", desc:"Fetch a site's HTML + JS bundles + source maps and hunt leaked API keys, env vars and tokens.", feat:["JS bundle scan","key regexes","source maps"] },
+  { id:"request-forge",  name:"Request Forge",     icon:"terminal", cat:"Offense", desc:"Build, tamper and replay any HTTP request; import from cURL; inspect responses (repeater).", feat:["cURL import","replay","headers"] },
+  { id:"ws-workbench",   name:"WebSocket Workbench", icon:"wifi", cat:"Offense", desc:"Connect to a WebSocket endpoint to sniff live frames and inject or fuzz crafted messages.", feat:["live sniff","inject","fuzz"] },
+  { id:"auth-lab",       name:"Auth / Token Lab",  icon:"key", cat:"Offense", desc:"Forge & tamper JWTs (alg:none, role→admin, resign), inject into requests and compare access.", feat:["alg:none","role escalation","token replay"] },
+  { id:"param-tamper",   name:"Param / Price Tamper", icon:"card", cat:"Offense", desc:"Auto-mutate price, quantity, role and id fields, replay, and flag when the server trusts client values.", feat:["price→0","role→admin","mass assignment"] },
+  { id:"injection-tester", name:"Injection Tester", icon:"flask", cat:"Offense", desc:"Probe params for SQLi / NoSQLi / SSTI / command injection with error, boolean, time-based and reflection detection.", feat:["SQLi","NoSQLi","SSTI","time-based"] },
+  { id:"idor-probe",     name:"IDOR / Access Probe", icon:"users", cat:"Offense", desc:"Enumerate neighbouring object IDs and compare authed vs unauthed responses to find broken access control.", feat:["id enum","authz diff","BOLA"] },
+  { id:"cors-tester",    name:"CORS Tester",       icon:"link", cat:"Offense", desc:"Detect exploitable CORS misconfigurations — wildcard, reflected origin and credentialed cross-origin access.", feat:["ACAO","credentials","reflection"] },
+  { id:"api-discovery",  name:"API / Endpoint Discovery", icon:"folder", cat:"Offense", desc:"Probe for exposed sensitive paths — .env, .git, source maps, swagger/OpenAPI and GraphQL introspection.", feat:[".env/.git","swagger","graphql introspection"] },
   // --- Kali-grade application-layer toolset ---
-  { id:"crypto-lab",     name:"Crypto Lab",        icon:"🔐", cat:"Crypto",  desc:"CyberChef-style encode/decode, hashing, HMAC, AES-GCM, hash identification and entropy analysis.", feat:["base64/hex/url","AES-GCM","HMAC","entropy"] },
-  { id:"content-discovery", name:"Content Discovery", icon:"📁", cat:"Recon", desc:"Directory & file brute force (gobuster/ffuf-style) with extensions, soft-404 filtering and concurrency.", feat:["dir brute","extensions","soft-404"] },
-  { id:"tech-fingerprint", name:"Tech Fingerprint", icon:"🔬", cat:"Recon", desc:"Identify server, frameworks, CMS and JS libraries from headers, HTML and script signatures (Wappalyzer-style).", feat:["frameworks","CMS","versions"] },
-  { id:"param-miner",    name:"Param Miner",       icon:"🪝", cat:"Offense", desc:"Discover hidden GET/POST parameters (Arjun-style) via reflection and response-diff detection.", feat:["hidden params","reflection","diff"] },
-  { id:"open-redirect",  name:"Open Redirect Scanner", icon:"↪️", cat:"Offense", desc:"Test redirect parameters for open-redirect to attacker domains via Location, meta and JS sinks.", feat:["//evil","Location","meta/js"] },
-  { id:"clickjacking",   name:"Clickjacking Tester", icon:"🖼️", cat:"Offense", desc:"Check X-Frame-Options / CSP frame-ancestors and prove framability with a live iframe PoC.", feat:["XFO","frame-ancestors","live PoC"] },
-  { id:"csrf-poc",       name:"CSRF PoC Builder",  icon:"🎭", cat:"Offense", desc:"Generate an auto-submitting HTML or fetch() proof-of-concept from any request.", feat:["auto-submit","fetch PoC","export"] },
-  { id:"revshell",       name:"Reverse Shell Generator", icon:"🐚", cat:"Offense", desc:"Generate reverse-shell one-liners (bash, python, php, nc, powershell…) with LHOST/LPORT and encoding.", feat:["multi-language","url/base64","listener"] },
+  { id:"crypto-lab",     name:"Crypto Lab",        icon:"hash", cat:"Crypto",  desc:"CyberChef-style encode/decode, hashing, HMAC, AES-GCM, hash identification and entropy analysis.", feat:["base64/hex/url","AES-GCM","HMAC","entropy"] },
+  { id:"content-discovery", name:"Content Discovery", icon:"folder", cat:"Recon", desc:"Directory & file brute force (gobuster/ffuf-style) with extensions, soft-404 filtering and concurrency.", feat:["dir brute","extensions","soft-404"] },
+  { id:"tech-fingerprint", name:"Tech Fingerprint", icon:"cpu", cat:"Recon", desc:"Identify server, frameworks, CMS and JS libraries from headers, HTML and script signatures (Wappalyzer-style).", feat:["frameworks","CMS","versions"] },
+  { id:"param-miner",    name:"Param Miner",       icon:"filter", cat:"Offense", desc:"Discover hidden GET/POST parameters (Arjun-style) via reflection and response-diff detection.", feat:["hidden params","reflection","diff"] },
+  { id:"open-redirect",  name:"Open Redirect Scanner", icon:"waypoints", cat:"Offense", desc:"Test redirect parameters for open-redirect to attacker domains via Location, meta and JS sinks.", feat:["//evil","Location","meta/js"] },
+  { id:"clickjacking",   name:"Clickjacking Tester", icon:"layers", cat:"Offense", desc:"Check X-Frame-Options / CSP frame-ancestors and prove framability with a live iframe PoC.", feat:["XFO","frame-ancestors","live PoC"] },
+  { id:"csrf-poc",       name:"CSRF PoC Builder",  icon:"share", cat:"Offense", desc:"Generate an auto-submitting HTML or fetch() proof-of-concept from any request.", feat:["auto-submit","fetch PoC","export"] },
+  { id:"revshell",       name:"Reverse Shell Generator", icon:"g-shell", cat:"Offense", desc:"Generate reverse-shell one-liners (bash, python, php, nc, powershell…) with LHOST/LPORT and encoding.", feat:["multi-language","url/base64","listener"] },
   // --- wave 2 ---
-  { id:"waf-detector",   name:"WAF Detector",      icon:"🛡️", cat:"Recon", desc:"Fingerprint web application firewalls (Cloudflare, Akamai, Imperva, Sucuri, AWS, ModSecurity…) from headers, status and block-page signatures.", feat:["cf/akamai/imperva","block pages","status"] },
-  { id:"web-spider",     name:"Web Spider",        icon:"🕷️", cat:"Recon", desc:"Crawl a page for links, forms, scripts, comments, emails and in-script API endpoints; optional one-hop same-origin crawl.", feat:["links/forms","endpoints","emails"] },
-  { id:"graphql-lab",    name:"GraphQL Lab",       icon:"◈", cat:"Offense", desc:"Run GraphQL introspection, enumerate queries/mutations/types and execute ad-hoc queries.", feat:["introspection","query runner","schema"] },
-  { id:"ssrf-probe",     name:"SSRF Probe",        icon:"🛰️", cat:"Offense", desc:"Test URL parameters for SSRF with cloud-metadata and internal targets plus an out-of-band canary for blind detection.", feat:["169.254.169.254","canary","internal"] },
+  { id:"waf-detector",   name:"WAF Detector",      icon:"shield-alert", cat:"Recon", desc:"Fingerprint web application firewalls (Cloudflare, Akamai, Imperva, Sucuri, AWS, ModSecurity…) from headers, status and block-page signatures.", feat:["cf/akamai/imperva","block pages","status"] },
+  { id:"web-spider",     name:"Web Spider",        icon:"bug", cat:"Recon", desc:"Crawl a page for links, forms, scripts, comments, emails and in-script API endpoints; optional one-hop same-origin crawl.", feat:["links/forms","endpoints","emails"] },
+  { id:"graphql-lab",    name:"GraphQL Lab",       icon:"diamond", cat:"Offense", desc:"Run GraphQL introspection, enumerate queries/mutations/types and execute ad-hoc queries.", feat:["introspection","query runner","schema"] },
+  { id:"ssrf-probe",     name:"SSRF Probe",        icon:"radar", cat:"Offense", desc:"Test URL parameters for SSRF with cloud-metadata and internal targets plus an out-of-band canary for blind detection.", feat:["169.254.169.254","canary","internal"] },
   // --- wave 3 ---
-  { id:"email-auth",     name:"Email Auth Checker", icon:"✉️", cat:"Recon", desc:"Audit a domain's SPF, DMARC and DKIM records over DNS-over-HTTPS and flag spoofable policies.", feat:["SPF","DMARC","DKIM"] },
-  { id:"wp-scan",        name:"WordPress Scanner", icon:"📰", cat:"Recon", desc:"Detect WordPress, enumerate users via the REST API, read the version and list plugins/themes.", feat:["user enum","version","plugins"] },
-  { id:"webrtc-leak",    name:"WebRTC IP Leak",    icon:"📶", cat:"Recon", desc:"Discover local/public IP addresses leaked by the browser via WebRTC ICE candidates.", feat:["local IP","STUN","mDNS"] },
-  { id:"exif-viewer",    name:"EXIF / Metadata",   icon:"📷", cat:"Recon", desc:"Read EXIF metadata (camera, timestamps, GPS) from a JPEG you pick — fully offline.", feat:["GPS","camera","offline"] },
+  { id:"email-auth",     name:"Email Auth Checker", icon:"mail", cat:"Recon", desc:"Audit a domain's SPF, DMARC and DKIM records over DNS-over-HTTPS and flag spoofable policies.", feat:["SPF","DMARC","DKIM"] },
+  { id:"wp-scan",        name:"WordPress Scanner", icon:"globe", cat:"Recon", desc:"Detect WordPress, enumerate users via the REST API, read the version and list plugins/themes.", feat:["user enum","version","plugins"] },
+  { id:"webrtc-leak",    name:"WebRTC IP Leak",    icon:"phone", cat:"Recon", desc:"Discover local/public IP addresses leaked by the browser via WebRTC ICE candidates.", feat:["local IP","STUN","mDNS"] },
+  { id:"exif-viewer",    name:"EXIF / Metadata",   icon:"camera", cat:"Recon", desc:"Read EXIF metadata (camera, timestamps, GPS) from a JPEG you pick — fully offline.", feat:["GPS","camera","offline"] },
   // --- wave 4 ---
-  { id:"jwt-attacks",    name:"JWT Attack Lab",    icon:"🎟️", cat:"Offense", desc:"Generate JWT attack tokens: alg:none, kid path/SQLi injection, RS256→HS256 algorithm confusion and jku/x5u hijack.", feat:["alg confusion","kid inject","jku"] },
-  { id:"http-methods",   name:"HTTP Methods Tester", icon:"🔁", cat:"Offense", desc:"Probe which HTTP verbs an endpoint accepts (PUT/DELETE/PATCH/OPTIONS) to find dangerous or misconfigured methods.", feat:["verb tampering","OPTIONS","PUT/DELETE"] },
-  { id:"bypass-403",     name:"403 Bypass Tester", icon:"🚧", cat:"Offense", desc:"Attempt access-control bypass on a forbidden path via path tricks and header overrides (X-Original-URL, X-Forwarded-For…).", feat:["path tricks","header override","X-Original-URL"] },
-  { id:"csp-auditor",    name:"CSP Auditor",       icon:"🧱", cat:"Web", desc:"Fetch or paste a Content-Security-Policy and grade it — unsafe-inline/eval, wildcards, missing directives.", feat:["unsafe-inline","wildcards","grade"] },
-  { id:"cookie-analyzer", name:"Cookie Analyzer",  icon:"🍪", cat:"Web", desc:"Audit Set-Cookie headers for Secure, HttpOnly, SameSite, scope and __Host-/__Secure- prefix compliance.", feat:["Secure/HttpOnly","SameSite","prefixes"] },
-  { id:"dork-generator", name:"Dork Generator",    icon:"🔍", cat:"Recon", desc:"Build Google dork queries for a target — exposed files, login pages, directory listings and secrets.", feat:["filetype","inurl","index of"] },
+  { id:"jwt-attacks",    name:"JWT Attack Lab",    icon:"bug", cat:"Offense", desc:"Generate JWT attack tokens: alg:none, kid path/SQLi injection, RS256→HS256 algorithm confusion and jku/x5u hijack.", feat:["alg confusion","kid inject","jku"] },
+  { id:"http-methods",   name:"HTTP Methods Tester", icon:"repeat", cat:"Offense", desc:"Probe which HTTP verbs an endpoint accepts (PUT/DELETE/PATCH/OPTIONS) to find dangerous or misconfigured methods.", feat:["verb tampering","OPTIONS","PUT/DELETE"] },
+  { id:"bypass-403",     name:"403 Bypass Tester", icon:"octagon", cat:"Offense", desc:"Attempt access-control bypass on a forbidden path via path tricks and header overrides (X-Original-URL, X-Forwarded-For…).", feat:["path tricks","header override","X-Original-URL"] },
+  { id:"csp-auditor",    name:"CSP Auditor",       icon:"shield", cat:"Web", desc:"Fetch or paste a Content-Security-Policy and grade it — unsafe-inline/eval, wildcards, missing directives.", feat:["unsafe-inline","wildcards","grade"] },
+  { id:"cookie-analyzer", name:"Cookie Analyzer",  icon:"cookie", cat:"Web", desc:"Audit Set-Cookie headers for Secure, HttpOnly, SameSite, scope and __Host-/__Secure- prefix compliance.", feat:["Secure/HttpOnly","SameSite","prefixes"] },
+  { id:"dork-generator", name:"Dork Generator",    icon:"search", cat:"Recon", desc:"Build Google dork queries for a target — exposed files, login pages, directory listings and secrets.", feat:["filetype","inurl","index of"] },
   // --- wave 5 ---
-  { id:"proto-pollution", name:"Prototype Pollution Scanner", icon:"☣️", cat:"Offense", desc:"Statically scan a site's JS for prototype-pollution sinks (deep merge, __proto__) and known-vulnerable library versions.", feat:["merge sinks","__proto__","lib versions"] },
-  { id:"typosquat",      name:"Typosquat Generator", icon:"🃏", cat:"Recon", desc:"Generate domain permutations (typos, homoglyphs, TLD swaps, bitsquats) and DNS-check which are registered.", feat:["homoglyph","bitsquat","TLD swap"] },
-  { id:"favicon-hash",   name:"Favicon Hash",      icon:"🔣", cat:"Recon", desc:"Compute the MurmurHash3 favicon hash Shodan uses to fingerprint and find related hosts.", feat:["mmh3","shodan","pivot"] },
-  { id:"mixed-content",  name:"Mixed Content Scanner", icon:"⚠️", cat:"Web", desc:"Find insecure http:// resources loaded by an https:// page (scripts, styles, images, forms).", feat:["active/passive","http on https"] },
-  { id:"dev-utils",      name:"Dev Utilities",     icon:"🧮", cat:"Crypto", desc:"Epoch↔date, UUID generate/inspect, base converter and a live regex tester.", feat:["epoch","uuid","regex","base"] },
-  { id:"cache-probe",    name:"Cache Poisoning Probe", icon:"🗄️", cat:"Offense", desc:"Inject unkeyed headers (X-Forwarded-Host/Scheme) and detect reflection — a web cache poisoning indicator.", feat:["unkeyed input","X-Forwarded-Host","reflection"] },
+  { id:"proto-pollution", name:"Prototype Pollution Scanner", icon:"layers", cat:"Offense", desc:"Statically scan a site's JS for prototype-pollution sinks (deep merge, __proto__) and known-vulnerable library versions.", feat:["merge sinks","__proto__","lib versions"] },
+  { id:"typosquat",      name:"Typosquat Generator", icon:"flag", cat:"Recon", desc:"Generate domain permutations (typos, homoglyphs, TLD swaps, bitsquats) and DNS-check which are registered.", feat:["homoglyph","bitsquat","TLD swap"] },
+  { id:"favicon-hash",   name:"Favicon Hash",      icon:"image", cat:"Recon", desc:"Compute the MurmurHash3 favicon hash Shodan uses to fingerprint and find related hosts.", feat:["mmh3","shodan","pivot"] },
+  { id:"mixed-content",  name:"Mixed Content Scanner", icon:"alert-triangle", cat:"Web", desc:"Find insecure http:// resources loaded by an https:// page (scripts, styles, images, forms).", feat:["active/passive","http on https"] },
+  { id:"dev-utils",      name:"Dev Utilities",     icon:"calculator", cat:"Crypto", desc:"Epoch↔date, UUID generate/inspect, base converter and a live regex tester.", feat:["epoch","uuid","regex","base"] },
+  { id:"cache-probe",    name:"Cache Poisoning Probe", icon:"database", cat:"Offense", desc:"Inject unkeyed headers (X-Forwarded-Host/Scheme) and detect reflection — a web cache poisoning indicator.", feat:["unkeyed input","X-Forwarded-Host","reflection"] },
   // --- wave 6 ---
-  { id:"bucket-finder",  name:"Cloud Bucket Finder", icon:"🪣", cat:"Recon", desc:"Hunt for public S3/GCS/Azure buckets from a keyword and flag listable or access-denied storage.", feat:["S3/GCS/Azure","listable","permutations"] },
-  { id:"wayback",        name:"Wayback Recon",     icon:"🕰️", cat:"Recon", desc:"Pull a domain's historical URLs from the Wayback Machine CDX API and surface juicy paths and parameters.", feat:["archived URLs","params","old endpoints"] },
-  { id:"xxe-helper",     name:"XXE Helper",        icon:"📜", cat:"Offense", desc:"Generate XXE payloads (file read, SSRF, OOB exfil, parameter entities) and send test XML to an endpoint.", feat:["file read","OOB exfil","tester"] },
-  { id:"jwks-inspector", name:"JWKS Inspector",    icon:"🧷", cat:"Crypto", desc:"Fetch and parse a JWKS endpoint — list keys with kid/alg/use and compute RFC7638 thumbprints.", feat:["kid/alg","thumbprint","RSA/EC"] },
-  { id:"sri-checker",    name:"SRI Checker",       icon:"🔗", cat:"Web", desc:"Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.", feat:["integrity","third-party","supply chain"] },
-  { id:"txt-parser",     name:"robots / security.txt", icon:"🤖", cat:"Recon", desc:"Fetch and parse robots.txt, security.txt and sitemap.xml — disallowed paths often reveal hidden endpoints.", feat:["disallow paths","contacts","sitemap"] },
+  { id:"bucket-finder",  name:"Cloud Bucket Finder", icon:"cloud", cat:"Recon", desc:"Hunt for public S3/GCS/Azure buckets from a keyword and flag listable or access-denied storage.", feat:["S3/GCS/Azure","listable","permutations"] },
+  { id:"wayback",        name:"Wayback Recon",     icon:"clock", cat:"Recon", desc:"Pull a domain's historical URLs from the Wayback Machine CDX API and surface juicy paths and parameters.", feat:["archived URLs","params","old endpoints"] },
+  { id:"xxe-helper",     name:"XXE Helper",        icon:"g-xml", cat:"Offense", desc:"Generate XXE payloads (file read, SSRF, OOB exfil, parameter entities) and send test XML to an endpoint.", feat:["file read","OOB exfil","tester"] },
+  { id:"jwks-inspector", name:"JWKS Inspector",    icon:"key", cat:"Crypto", desc:"Fetch and parse a JWKS endpoint — list keys with kid/alg/use and compute RFC7638 thumbprints.", feat:["kid/alg","thumbprint","RSA/EC"] },
+  { id:"sri-checker",    name:"SRI Checker",       icon:"link", cat:"Web", desc:"Find cross-origin scripts and styles loaded without Subresource Integrity — a supply-chain risk.", feat:["integrity","third-party","supply chain"] },
+  { id:"txt-parser",     name:"robots / security.txt", icon:"file-text", cat:"Recon", desc:"Fetch and parse robots.txt, security.txt and sitemap.xml — disallowed paths often reveal hidden endpoints.", feat:["disallow paths","contacts","sitemap"] },
   // --- wave 7 ---
-  { id:"takeover",       name:"Subdomain Takeover", icon:"🏴", cat:"Recon", desc:"Resolve a host's CNAME and fingerprint dangling cloud services (GitHub Pages, S3, Heroku, Azure…) for takeover.", feat:["CNAME","fingerprints","dangling"] },
-  { id:"pwned-pass",     name:"Pwned Password",    icon:"🔥", cat:"Crypto", desc:"Check a password against Have I Been Pwned using k-anonymity — the password never leaves your device.", feat:["HIBP","k-anonymity","SHA-1 prefix"] },
-  { id:"ssti-builder",   name:"SSTI Builder",      icon:"🧩", cat:"Offense", desc:"Per-engine server-side template injection probes (Jinja2, Twig, Freemarker, ERB, Velocity…) and a polyglot.", feat:["Jinja2/Twig","polyglot","engine ID"] },
-  { id:"lfi-tester",     name:"Path Traversal / LFI", icon:"📂", cat:"Offense", desc:"Test a parameter for path traversal / local file inclusion with layered encodings and file-content signatures.", feat:["../ depths","encodings","/etc/passwd"] },
-  { id:"hsts-checker",   name:"HSTS Checker",      icon:"🛤️", cat:"Web", desc:"Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.", feat:["max-age","preload","includeSubDomains"] },
-  { id:"pw-strength",    name:"Password Strength", icon:"💪", cat:"Crypto", desc:"Estimate password entropy and crack time, and flag weak patterns — fully offline.", feat:["entropy","crack time","patterns"] },
+  { id:"takeover",       name:"Subdomain Takeover", icon:"flag", cat:"Recon", desc:"Resolve a host's CNAME and fingerprint dangling cloud services (GitHub Pages, S3, Heroku, Azure…) for takeover.", feat:["CNAME","fingerprints","dangling"] },
+  { id:"pwned-pass",     name:"Pwned Password",    icon:"unlock", cat:"Crypto", desc:"Check a password against Have I Been Pwned using k-anonymity — the password never leaves your device.", feat:["HIBP","k-anonymity","SHA-1 prefix"] },
+  { id:"ssti-builder",   name:"SSTI Builder",      icon:"g-template", cat:"Offense", desc:"Per-engine server-side template injection probes (Jinja2, Twig, Freemarker, ERB, Velocity…) and a polyglot.", feat:["Jinja2/Twig","polyglot","engine ID"] },
+  { id:"lfi-tester",     name:"Path Traversal / LFI", icon:"g-traversal", cat:"Offense", desc:"Test a parameter for path traversal / local file inclusion with layered encodings and file-content signatures.", feat:["../ depths","encodings","/etc/passwd"] },
+  { id:"hsts-checker",   name:"HSTS Checker",      icon:"shield-alert", cat:"Web", desc:"Inspect Strict-Transport-Security — max-age, includeSubDomains, preload eligibility.", feat:["max-age","preload","includeSubDomains"] },
+  { id:"pw-strength",    name:"Password Strength", icon:"lock", cat:"Crypto", desc:"Estimate password entropy and crack time, and flag weak patterns — fully offline.", feat:["entropy","crack time","patterns"] },
   // --- wave 8 ---
-  { id:"jwt-cracker",    name:"JWT Secret Cracker", icon:"🔨", cat:"Crypto", desc:"Dictionary-attack an HS256/384/512 JWT to recover the signing secret locally via SubtleCrypto.", feat:["HMAC brute","wordlist","local"] },
-  { id:"ip-intel",       name:"IP Intel",          icon:"🌎", cat:"Recon", desc:"Resolve a host, reverse-DNS (PTR) and pull geolocation/ASN/ISP for an IP.", feat:["PTR","geo/ASN","ISP"] },
-  { id:"subnet-calc",    name:"Subnet Calculator", icon:"📐", cat:"Crypto", desc:"Compute network, broadcast, mask, host range and count from CIDR — fully offline.", feat:["CIDR","range","hosts"] },
-  { id:"crlf-tester",    name:"CRLF Injection",    icon:"↵", cat:"Offense", desc:"Inject CRLF sequences into a parameter and detect header/response splitting via reflected markers.", feat:["%0d%0a","header inject","splitting"] },
-  { id:"filetype-id",    name:"File Type ID",      icon:"📦", cat:"Crypto", desc:"Identify a file's true type from its magic bytes — spot mismatched extensions, offline.", feat:["magic bytes","30+ types","offline"] },
+  { id:"jwt-cracker",    name:"JWT Secret Cracker", icon:"g-hex", cat:"Crypto", desc:"Dictionary-attack an HS256/384/512 JWT to recover the signing secret locally via SubtleCrypto.", feat:["HMAC brute","wordlist","local"] },
+  { id:"ip-intel",       name:"IP Intel",          icon:"map-pin", cat:"Recon", desc:"Resolve a host, reverse-DNS (PTR) and pull geolocation/ASN/ISP for an IP.", feat:["PTR","geo/ASN","ISP"] },
+  { id:"subnet-calc",    name:"Subnet Calculator", icon:"grid", cat:"Crypto", desc:"Compute network, broadcast, mask, host range and count from CIDR — fully offline.", feat:["CIDR","range","hosts"] },
+  { id:"crlf-tester",    name:"CRLF Injection",    icon:"bolt", cat:"Offense", desc:"Inject CRLF sequences into a parameter and detect header/response splitting via reflected markers.", feat:["%0d%0a","header inject","splitting"] },
+  { id:"filetype-id",    name:"File Type ID",      icon:"g-binary", cat:"Crypto", desc:"Identify a file's true type from its magic bytes — spot mismatched extensions, offline.", feat:["magic bytes","30+ types","offline"] },
   // --- wave 9 ---
-  { id:"rate-tester",    name:"Rate / Load Tester", icon:"⏱️", cat:"Offense", desc:"Fire a burst of concurrent requests to measure rate limiting, status distribution and latency percentiles.", feat:["429 detect","p95 latency","burst"] },
-  { id:"email-permutator", name:"Email Permutator", icon:"📧", cat:"Recon", desc:"Generate likely corporate email address formats from a name and domain for OSINT.", feat:["name formats","OSINT","copy"] },
-  { id:"json-tools",     name:"JSON Tools",        icon:"🧾", cat:"Crypto", desc:"Format, minify, validate and escape/unescape JSON with precise error locations.", feat:["format","validate","escape"] },
-  { id:"shodan-query",   name:"Shodan / Censys Query", icon:"🔭", cat:"Recon", desc:"Build Shodan and Censys search queries from a target with facet chips (port, org, product, cert).", feat:["shodan","censys","facets"] },
-  { id:"file-hasher",    name:"File Hasher",       icon:"#️⃣", cat:"Crypto", desc:"Compute SHA-1/256/512 of a picked file for integrity or IOC checks — fully offline.", feat:["SHA-1/256/512","offline","IOC"] },
+  { id:"rate-tester",    name:"Rate / Load Tester", icon:"clock", cat:"Offense", desc:"Fire a burst of concurrent requests to measure rate limiting, status distribution and latency percentiles.", feat:["429 detect","p95 latency","burst"] },
+  { id:"email-permutator", name:"Email Permutator", icon:"mail", cat:"Recon", desc:"Generate likely corporate email address formats from a name and domain for OSINT.", feat:["name formats","OSINT","copy"] },
+  { id:"json-tools",     name:"JSON Tools",        icon:"g-json", cat:"Crypto", desc:"Format, minify, validate and escape/unescape JSON with precise error locations.", feat:["format","validate","escape"] },
+  { id:"shodan-query",   name:"Shodan / Censys Query", icon:"search", cat:"Recon", desc:"Build Shodan and Censys search queries from a target with facet chips (port, org, product, cert).", feat:["shodan","censys","facets"] },
+  { id:"file-hasher",    name:"File Hasher",       icon:"g-hex", cat:"Crypto", desc:"Compute SHA-1/256/512 of a picked file for integrity or IOC checks — fully offline.", feat:["SHA-1/256/512","offline","IOC"] },
   // --- wave 10 ---
-  { id:"diff-tool",      name:"Diff Tool",         icon:"🔀", cat:"Crypto", desc:"Line-level diff of two texts or HTTP responses (Burp-comparer style), highlighting additions and removals.", feat:["LCS diff","responses","offline"] },
-  { id:"url-analyzer",   name:"URL Analyzer",      icon:"📑", cat:"Web", desc:"Break a URL into components, decode every query parameter and auto-decode embedded JWT/base64 values.", feat:["params","decode","JWT/base64"] },
-  { id:"ua-parser",      name:"User-Agent Parser", icon:"🧭", cat:"Recon", desc:"Parse a User-Agent string into browser, engine, OS, device and bot indicators.", feat:["browser/OS","engine","bot"] },
-  { id:"saml-decoder",   name:"SAML Decoder",      icon:"📃", cat:"Crypto", desc:"Decode SAML (base64 + optional DEFLATE), pretty-print the XML and extract issuer, NameID, attributes and validity.", feat:["inflate","NameID","attributes"] },
+  { id:"diff-tool",      name:"Diff Tool",         icon:"g-diff", cat:"Crypto", desc:"Line-level diff of two texts or HTTP responses (Burp-comparer style), highlighting additions and removals.", feat:["LCS diff","responses","offline"] },
+  { id:"url-analyzer",   name:"URL Analyzer",      icon:"link", cat:"Web", desc:"Break a URL into components, decode every query parameter and auto-decode embedded JWT/base64 values.", feat:["params","decode","JWT/base64"] },
+  { id:"ua-parser",      name:"User-Agent Parser", icon:"monitor", cat:"Recon", desc:"Parse a User-Agent string into browser, engine, OS, device and bot indicators.", feat:["browser/OS","engine","bot"] },
+  { id:"saml-decoder",   name:"SAML Decoder",      icon:"file-text", cat:"Crypto", desc:"Decode SAML (base64 + optional DEFLATE), pretty-print the XML and extract issuer, NameID, attributes and validity.", feat:["inflate","NameID","attributes"] },
 ];
 
 // Desktop-only factory — invoked ONLY when Platform.mode === "desktop".
 // Keeping these inside a function means the iOS path never touches this data.
 function loadDesktopTools() {
   return [
-    { id:"packet-analyzer", name:"Packet Analyzer", icon:"📡", cat:"Network", daemon:true, desc:"Wireshark-style live capture fed by raw pcap stream over WebSocket, with protocol dissection + BPF filters.", feat:["pcap stream","dissection","BPF"] },
-    { id:"network-scanner", name:"Network Scanner", icon:"🗺️", cat:"Network", daemon:true, desc:"nmap frontend — sends scan configs to daemon /exec, renders results.", feat:["nmap","host discovery","port states"] },
-    { id:"http-interceptor", name:"HTTP Interceptor", icon:"🕸️", cat:"Network", daemon:true, desc:"Burp-style intercepting proxy; daemon intercepts, browser renders req/res editor.", feat:["proxy","intercept","repeater"] },
-    { id:"exploit-console", name:"Exploit Console", icon:"💥", cat:"Offense", daemon:true, desc:"Metasploit-style console backed by a daemon-managed v86/CheerpX Linux runtime.", feat:["modules","sessions","v86 runtime"] },
-    { id:"interface-manager", name:"Interface Manager", icon:"🔌", cat:"Network", daemon:true, desc:"Enumerate NICs, toggle monitor mode via daemon /interfaces.", feat:["NIC list","monitor mode","MAC"] },
-    { id:"packet-injector", name:"Raw Packet Injector", icon:"💉", cat:"Network", daemon:true, desc:"Craft & inject custom packets via daemon /inject.", feat:["packet craft","layers","replay"] },
-    { id:"remote-daemon", name:"Remote Daemon Connector", icon:"🛜", cat:"System", daemon:true, desc:"Pair with a daemon on another LAN device or over a tunnel.", feat:["LAN pair","tunnel","QR pair"] },
+    { id:"packet-analyzer", name:"Packet Analyzer", icon:"radar", cat:"Network", daemon:true, desc:"Wireshark-style live capture fed by raw pcap stream over WebSocket, with protocol dissection + BPF filters.", feat:["pcap stream","dissection","BPF"] },
+    { id:"network-scanner", name:"Network Scanner", icon:"crosshair", cat:"Network", daemon:true, desc:"nmap frontend — sends scan configs to daemon /exec, renders results.", feat:["nmap","host discovery","port states"] },
+    { id:"http-interceptor", name:"HTTP Interceptor", icon:"share", cat:"Network", daemon:true, desc:"Burp-style intercepting proxy; daemon intercepts, browser renders req/res editor.", feat:["proxy","intercept","repeater"] },
+    { id:"exploit-console", name:"Exploit Console", icon:"terminal", cat:"Offense", daemon:true, desc:"Metasploit-style console backed by a daemon-managed v86/CheerpX Linux runtime.", feat:["modules","sessions","v86 runtime"] },
+    { id:"interface-manager", name:"Interface Manager", icon:"plug", cat:"Network", daemon:true, desc:"Enumerate NICs, toggle monitor mode via daemon /interfaces.", feat:["NIC list","monitor mode","MAC"] },
+    { id:"packet-injector", name:"Raw Packet Injector", icon:"bolt", cat:"Network", daemon:true, desc:"Craft & inject custom packets via daemon /inject.", feat:["packet craft","layers","replay"] },
+    { id:"remote-daemon", name:"Remote Daemon Connector", icon:"wifi", cat:"System", daemon:true, desc:"Pair with a daemon on another LAN device or over a tunnel.", feat:["LAN pair","tunnel","QR pair"] },
   ];
 }
 
@@ -4458,7 +4552,7 @@ function toolHeader(tool) {
   if (tool.daemon) meta.appendChild(el("span", { class: "badge amber" }, "daemon required"));
   else meta.appendChild(el("span", { class: "badge ok" }, "browser-native"));
   return el("div", { class: "tool-head" },
-    el("div", { class: "t-ico" }, tool.icon),
+    el("div", { class: "t-ico" }, Icon(tool.icon, 24)),
     el("div", {},
       el("h1", {}, tool.name),
       el("p", {}, tool.desc),
@@ -4471,14 +4565,14 @@ function featRow(tool) {
 }
 function stubBody(tool) {
   return el("div", { class: "stub-panel" },
-    el("div", { class: "s-ico" }, "🚧"),
+    el("div", { class: "s-ico" }, Icon("alert-triangle", 28)),
     el("h3", {}, "Module scaffold ready"),
     el("div", {}, "UI for this tool ships next. The shell, routing and state plumbing are wired."),
     featRow(tool));
 }
 function daemonGate(tool) {
   const gate = el("div", { class: "gate" },
-    el("div", { class: "g-ico" }, "🔌"),
+    el("div", { class: "g-ico" }, Icon("plug", 22)),
     el("div", { class: "g-txt", html: `<b>Connect the daemon to use ${tool.name}</b>` +
       `<small>This tool streams from the local Rust daemon at <code>${Daemon.url}</code>.</small>` }),
     el("div", { class: "btn primary", onclick: () => Daemon.retryNow() }, "Retry connection"));
@@ -4524,7 +4618,7 @@ const DesktopUI = (() => {
   function buildSidebar() {
     const side = $("#dSidebar");
     side.innerHTML = "";
-    side.appendChild(navItem({ id:"overview", name:"Overview", icon:"▦" }, "Home"));
+    side.appendChild(navItem({ id:"overview", name:"Overview", icon:"grid" }, "Home"));
 
     const cats = [...new Set(registry.map(t => t.cat))];
     for (const cat of cats) {
@@ -4532,15 +4626,15 @@ const DesktopUI = (() => {
       registry.filter(t => t.cat === cat).forEach(t => side.appendChild(navItem(t)));
     }
     side.appendChild(el("div", { class: "nav-group-title" }, "System"));
-    side.appendChild(navItem({ id: "history", name: "History", icon: "🕘" }));
-    side.appendChild(navItem({ id: "settings", name: "Settings", icon: "⚙️" }));
+    side.appendChild(navItem({ id: "history", name: "History", icon: "clock" }));
+    side.appendChild(navItem({ id: "settings", name: "Settings", icon: "gear" }));
     const foot = el("div", { class: "sidebar-foot" },
       `${registry.length} tools • ${Platform.mode} tier`);
     side.appendChild(foot);
   }
   function navItem(tool, groupless) {
     const item = el("div", { class: "nav-item", "data-id": tool.id, onclick: () => Router.go(tool.id) },
-      el("span", { class: "ico" }, tool.icon),
+      el("span", { class: "ico" }, Icon(tool.icon, 16)),
       el("span", { class: "lbl" }, tool.name));
     if (tool.daemon) {
       const dot = el("span", { class: "dot amber req" });
@@ -4591,7 +4685,7 @@ const DesktopUI = (() => {
       foot.append(el("span", { class: "dot green" }), el("span", { class: "badge ok" }, "ready"));
     }
     return el("div", { class: "card", onclick: () => Router.go(tool.id) },
-      el("div", { class: "c-top" }, el("span", { class: "c-ico" }, tool.icon), el("span", { class: "c-name" }, tool.name)),
+      el("div", { class: "c-top" }, el("span", { class: "c-ico" }, Icon(tool.icon, 20)), el("span", { class: "c-name" }, tool.name)),
       el("div", { class: "c-desc" }, tool.desc),
       foot);
   }
@@ -4652,10 +4746,10 @@ const DesktopUI = (() => {
     let overlay, input, listNode, items = [], filtered = [], idx = 0;
     function commands() {
       return [
-        { id: "overview", name: "Overview", icon: "▦", cat: "nav" },
+        { id: "overview", name: "Overview", icon: "grid", cat: "nav" },
         ...registry.map(t => ({ id: t.id, name: t.name, icon: t.icon, cat: t.cat })),
-        { id: "history", name: "History", icon: "🕘", cat: "system" },
-        { id: "settings", name: "Settings", icon: "⚙️", cat: "system" },
+        { id: "history", name: "History", icon: "clock", cat: "system" },
+        { id: "settings", name: "Settings", icon: "gear", cat: "system" },
       ];
     }
     function build() {
@@ -4675,7 +4769,7 @@ const DesktopUI = (() => {
     function draw() {
       listNode.innerHTML = "";
       filtered.forEach((c, i) => listNode.appendChild(el("div", { class: "pal-item" + (i === idx ? " sel" : ""), onclick: () => choose(i) },
-        el("span", { class: "pi-ico" }, c.icon), el("span", { class: "pi-name" }, c.name), el("span", { class: "pi-cat" }, c.cat))));
+        el("span", { class: "pi-ico" }, Icon(c.icon, 16)), el("span", { class: "pi-name" }, c.name), el("span", { class: "pi-cat" }, c.cat))));
     }
     function choose(i) { const c = filtered[i]; if (!c) return; close(); Router.go(c.id); }
     function key(e) {
@@ -4727,7 +4821,7 @@ const DesktopUI = (() => {
     // banner if daemon never connects shortly after load
     setTimeout(() => {
       if (!Daemon.isOnline()) {
-        Banner.show("amber", "🔌",
+        Banner.show("amber", "plug",
           "Install the PenKit daemon to unlock full capabilities",
           'Network, packet & exploit tools need the local daemon. <a href="#" id="dlDaemon">Download →</a>');
       }
@@ -4745,17 +4839,17 @@ const IOSUI = (() => {
   let pageIndex = 0, pagerBuilt = false;
 
   const TABS = [
-    { sec:"home",     icon:"⊞", label:"Apps" },
-    { sec:"library",  icon:"📚", label:"Library" },
-    { sec:"reports",  icon:"📝", label:"Reports" },
-    { sec:"settings", icon:"⚙️", label:"Settings" },
+    { sec:"home",     icon:"grid",      label:"Apps" },
+    { sec:"library",  icon:"book",      label:"Library" },
+    { sec:"reports",  icon:"file-text", label:"Reports" },
+    { sec:"settings", icon:"gear",      label:"Settings" },
   ];
   const CAT_ORDER = ["Recon", "Web", "Offense", "Crypto", "Output"];
 
   /* ---- springboard / app grid ---- */
   function tile(t) {
     return el("div", { class: "app-tile", onclick: () => openApp(t) },
-      el("div", { class: "at-ico" }, el("span", {}, t.icon)),
+      el("div", { class: "at-ico" }, Icon(t.icon, 28)),
       el("div", { class: "at-name" }, t.name));
   }
   function renderGrid(query = "") {
@@ -4797,7 +4891,7 @@ const IOSUI = (() => {
     page.dataset.mounted = "1";
     const t = tools[i];
     page.appendChild(el("div", { class: "tool-head", style: "margin-bottom:14px" },
-      el("div", { class: "t-ico" }, t.icon),
+      el("div", { class: "t-ico" }, Icon(t.icon, 24)),
       el("div", {}, el("h1", { style: "font-size:18px" }, t.name), el("p", {}, t.desc))));
     const impl = Impl[t.id];
     if (impl) {
@@ -4832,7 +4926,7 @@ const IOSUI = (() => {
     const bar = $("#iosTabbar");
     bar.innerHTML = "";
     TABS.forEach(tab => bar.appendChild(el("div", { class: "ios-tab", "data-sec": tab.sec, onclick: () => showSection(tab.sec) },
-      el("span", { class: "tb-ico" }, tab.icon), el("span", {}, tab.label))));
+      el("span", { class: "tb-ico" }, Icon(tab.icon, 20)), el("span", {}, tab.label))));
   }
   function showSection(sec) {
     $$(".ios-section").forEach(s => s.classList.toggle("active", s.dataset.sec === sec));
@@ -4878,7 +4972,7 @@ const Banner = (() => {
   function show(kind, ico, title, sub) {
     const b = node();
     b.className = "show " + (kind || "");
-    $("#bnIco").textContent = ico || "⚡";
+    const holder = $("#bnIco"); holder.innerHTML = ""; holder.appendChild(Icon(ico || "bolt", 18));
     $("#bnTxt").innerHTML = `${title}${sub ? `<small>${sub}</small>` : ""}`;
   }
   function hide() { node().className = ""; }
